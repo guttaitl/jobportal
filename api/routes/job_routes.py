@@ -31,7 +31,7 @@ class JobBase(BaseModel):
 # 🔥 GET RECENT JOBS (MUST BE FIRST - before /jobs/{job_id})
 # =========================
 
-@router.get("/jobs/recent")
+@router.get("/recent")
 def get_recent_jobs(
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db)
@@ -64,7 +64,7 @@ def get_recent_jobs(
 # 🔵 GET ALL JOBS (with optional recent filter via query param)
 # =========================
 
-@router.get("/jobs")
+@router.get("/")
 def get_jobs(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
@@ -124,7 +124,7 @@ def get_jobs(
 # 🟡 GET JOB BY ID (MUST BE AFTER /jobs/recent)
 # =========================
 
-@router.get("/jobs/{job_id}")
+@router.get("/{job_id}")
 def get_job(job_id: str, db: Session = Depends(get_db)):
     """
     Get a specific job by ID
@@ -205,7 +205,7 @@ def create_job(job: JobBase, db: Session = Depends(get_db)):
 # 🟠 UPDATE JOB (PUT)
 # =========================
 
-@router.put("/jobs/{job_id}")
+@router.put("/{job_id}")
 def update_job(job_id: str, job: JobBase, db: Session = Depends(get_db)):
     """
     Update an existing job
@@ -237,7 +237,7 @@ def update_job(job_id: str, job: JobBase, db: Session = Depends(get_db)):
 # 🔴 DELETE JOB
 # =========================
 
-@router.delete("/jobs/{job_id}")
+@router.delete("/{job_id}")
 def delete_job(job_id: str, db: Session = Depends(get_db)):
     """
     Delete a job posting
@@ -257,7 +257,7 @@ def delete_job(job_id: str, db: Session = Depends(get_db)):
 # 🔍 SEARCH JOBS (optional)
 # =========================
 
-@router.get("/jobs/search")
+@router.get("/search")
 def search_jobs(
     q: str = Query(..., min_length=1),
     limit: int = Query(20, ge=1, le=100),
