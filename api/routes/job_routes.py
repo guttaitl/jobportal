@@ -8,7 +8,7 @@ from api.db import get_db
 from api.models import JobPosting
 from api.utils.email_sender import send_job_notification
 
-router = APIRouter(tags=["Jobs"])
+router = APIRouter(prefix="/jobs")
 
 # =========================
 # 📦 REQUEST MODEL (matches frontend)
