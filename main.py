@@ -76,19 +76,12 @@ app = FastAPI(
 # CORS (FIXED)
 # ==========================================================
 
-FRONTEND_URL = os.getenv("FRONTEND_URL")
-
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-]
-
-if FRONTEND_URL:
-    origins.append(FRONTEND_URL)
-
-# fallback safety (optional)
-origins += [
     "https://hiringcircleusa.vercel.app",
+    "https://www.hiringcircle.us",
+    "https://hiringcircle.us",
 ]
 
 app.add_middleware(
