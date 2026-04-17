@@ -1,92 +1,77 @@
 import os
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-
-SCOPES = ['https://www.googleapis.com/auth/gmail.send']
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CLIENT_SECRET_FILE = os.path.join(BASE_DIR, "client_secret.json")
-TOKEN_FILE = os.path.join(BASE_DIR, "token.json")
-
-def get_gmail_service():
-    creds = None
-
-    # ✅ Load token if exists
-    if os.path.exists(TOKEN_FILE):
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-
-    # ❗ If no creds → trigger browser login
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                CLIENT_SECRET_FILE,
-                SCOPES
-            )
-            creds = flow.run_local_server(port=0)
-
-        # Save token
-        with open(TOKEN_FILE, 'w') as token:
-            token.write(creds.to_json())
-
-    return build('gmail', 'v1', credentials=creds)
-
-# ✅ Send Email Function
-import os
+import json
 import base64
 from email.mime.text import MIMEText
 
-from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
-# ✅ Scope (REQUIRED)
-SCOPES = ['https://www.googleapis.com/auth/gmail.send']
 
-# ✅ Paths
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CLIENT_SECRET_FILE = os.path.join(BASE_DIR, "client_secret.json")
-TOKEN_FILE = os.path.join(BASE_DIR, "token.json")
+SCOPES = ['https://www.googleapis.com/auth/gmail.send']
 
 
 def get_gmail_service():
-    creds = None
+    token_json = os.getenv("GOOGLE_TOKEN_JSON")
 
-    # Load existing token
-    if os.path.exists(TOKEN_FILE):
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+    if not token_json:
+        raise Exception("❌ GOOGLE_TOKEN_JSON missing")
 
-    # If not valid → login again
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
+    creds = Credentials.from_authorized_user_info(
+        json.loads(token_json),
+        SCOPES
+    )
+
+    # Refresh token if expired
+    if creds.expired and creds.refresh_token:
+        print("🔄 Refreshing expired Gmail token...")
+        try:
             creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                CLIENT_SECRET_FILE,
-                SCOPES
-            )
-            creds = flow.run_local_server(port=0)
-
-        # Save token
-        with open(TOKEN_FILE, 'w') as token:
-            token.write(creds.to_json())
+            print("✅ Token refreshed successfully")
+        except Exception as e:
+            print(f"❌ Token refresh failed: {e}")
+            raise Exception(f"Gmail token refresh failed: {e}")
 
     return build('gmail', 'v1', credentials=creds)
 
-def send_email(to_email: str, subject: str, body: str):
-    service = get_gmail_service()
 
-    message = MIMEText(body, "html")  # ✅ IMPORTANT FIX
-    message['to'] = to_email
-    message['subject'] = subject
+def send_email(to_email: str, subject: str, body: str) -> bool:
+    try:
+        print("📧 Sending email to:", to_email)
 
-    raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+        service = get_gmail_service()
 
-    service.users().messages().send(
-        userId="me",
-        body={"raw": raw_message}
-    ).execute()
+        message = MIMEText(body, "html")
+        message["to"] = to_email
+        message["subject"] = subject
+
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+
+        service.users().messages().send(
+            userId="me",
+            body={"raw": raw}
+        ).execute()
+
+        print("✅ Email sent")
+        return True
+
+    except Exception as e:
+        print("❌ Email failed:", str(e))
+        return False
+    
+if __name__ == "__main__":
+    print("🚀 Running Gmail test...")
+
+    try:
+        service = get_gmail_service()
+        print("✅ Gmail service created")
+
+        # OPTIONAL: send test email
+        send_email(
+            to_email="your_email@gmail.com",  # change this
+            subject="Test Email",
+            body="<h1>It works 🚀</h1>"
+        )
+
+    except Exception as e:
+        print("❌ ERROR:", str(e))

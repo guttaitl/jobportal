@@ -5,23 +5,14 @@ from sqlalchemy import text
 import os
 import secrets
 import traceback
-import base64
-
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-
 from api.db import get_db
 from api.utils.security import verify_password, create_access_token, hash_password
 from api.schemas.auth_schema import LoginRequest, EmailCheckRequest
-from api.gmail_service import get_gmail_service
+from api.utils.email_sender import send_verification_email as send_verification_email_via_gmail
 
 router = APIRouter()
 
@@ -66,120 +57,39 @@ def resend_verification(payload: EmailCheckRequest, db: Session = Depends(get_db
     db.commit()
 
     print("📧 Sending new verification email...")
-    send_verification_email(payload.email, token)
+    email_sent = _do_send_verification_email(payload.email, token)
 
     return {
-        "status": "sent",
-        "message": "Verification email resent successfully"
+        "status": "sent" if email_sent else "email_failed",
+        "message": "Verification email resent successfully" if email_sent else "Failed to send verification email. Please try again."
     }
 
 
-def send_verification_email(email: str, token: str) -> bool:
+def _do_send_verification_email(email: str, token: str) -> bool:
+    """Send verification email using the reliable email_sender module."""
     try:
         print("===== EMAIL DEBUG START =====")
         print("TARGET EMAIL:", email)
         print("TOKEN:", token[:10] + "...")
 
-        # --------------------------------------------------
-        # URL FIX (VERY IMPORTANT)
-        # --------------------------------------------------
-        FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
         verify_link = f"{FRONTEND_URL}/verify?token={token}"
-
         print("🔗 VERIFY LINK:", verify_link)
 
-        subject = "Verify your email - HiringCircle"
+        success = send_verification_email_via_gmail(email, verify_link)
 
-        # --------------------------------------------------
-        # EMAIL BODY
-        # --------------------------------------------------
-        html_body = f"""
-        <html>
-          <body style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px;">
-            <div style="background:#2563eb;color:white;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
-              <h1 style="margin:0;">{EMAIL_FROM_NAME}</h1>
-            </div>
-
-            <div style="background:#f9fafb;padding:30px;border:1px solid #e5e7eb;border-radius:0 0 8px 8px;">
-              <h2 style="color:#1f2937;">Verify Your Email</h2>
-              <p>Hello,</p>
-              <p>Please verify your email by clicking below:</p>
-
-              <div style="text-align:center;margin:30px 0;">
-                <a href="{verify_link}" 
-                   style="background:#2563eb;color:white;padding:12px 30px;text-decoration:none;border-radius:6px;">
-                  Verify Email
-                </a>
-              </div>
-
-              <p style="font-size:14px;">Or copy this link:<br>{verify_link}</p>
-
-              <hr>
-              <p style="font-size:12px;">
-                If you didn’t create this account, ignore this email.
-              </p>
-            </div>
-          </body>
-        </html>
-        """
-
-        plain_body = f"""
-Hello,
-
-Verify your email:
-{verify_link}
-
-If you didn’t create this account, ignore this email.
-"""
-
-        # --------------------------------------------------
-        # GMAIL SERVICE
-        # --------------------------------------------------
-        print("🚀 Initializing Gmail API...")
-        service = get_gmail_service()
-
-        if not service:
-            print("❌ Gmail service not initialized")
-            return False
-
-        print("✅ Gmail API ready")
-
-        # --------------------------------------------------
-        # BUILD MESSAGE
-        # --------------------------------------------------
-        message = MIMEMultipart("alternative")
-        message["to"] = email
-        message["subject"] = subject
-
-        # Optional but recommended
-        message["from"] = os.getenv("EMAIL_FROM", "noreply@hiringcircle.us")
-
-        message.attach(MIMEText(plain_body, "plain"))
-        message.attach(MIMEText(html_body, "html"))
-
-        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
-
-        # --------------------------------------------------
-        # SEND EMAIL
-        # --------------------------------------------------
-        print("📧 Sending email...")
-
-        sent = service.users().messages().send(
-            userId="me",
-            body={"raw": raw_message}
-        ).execute()
-
-        print("✅ Email sent:", sent.get("id"))
+        if success:
+            print("✅ Email sent successfully")
+        else:
+            print("❌ Email sender returned False")
         print("===== EMAIL DEBUG END =====")
-
-        return True
+        return success
 
     except Exception as e:
         print("❌ EMAIL ERROR:", str(e))
-        import traceback
-        print(traceback.format_exc())
+        traceback.print_exc()
         print("===== EMAIL DEBUG END =====")
         return False
+
 # ==========================================================
 # CHECK EMAIL AVAILABILITY
 # ==========================================================
@@ -338,7 +248,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         print("✅ User created successfully")
 
         print("📧 Sending verification email...")
-        email_sent = send_verification_email(payload.email, token)
+        email_sent = _do_send_verification_email(payload.email, token)
 
         return {
             "status": "success",

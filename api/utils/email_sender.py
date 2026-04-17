@@ -49,15 +49,17 @@ def get_email_config():
 # SEND EMAIL (GMAIL API)
 # ==========================================================
 
-def send_email_gmail_api(to_list, bcc_list, subject, html):
+def send_email_gmail_api(to_list, bcc_list, subject, html, plain_text=None):
 
     config = get_email_config()
 
     if not config["client_id"] or not config["refresh_token"]:
-        logger.error("Gmail API not configured")
+        logger.error("Gmail API not configured — check GMAIL_CLIENT_ID and GMAIL_REFRESH_TOKEN env vars")
         return False
 
     try:
+        logger.info(f"📧 Sending email: subject='{subject}' to={to_list}")
+
         creds = Credentials(
             None,
             refresh_token=config["refresh_token"],
@@ -77,21 +79,23 @@ def send_email_gmail_api(to_list, bcc_list, subject, html):
         if bcc_list:
             msg["Bcc"] = ", ".join(bcc_list)
 
-        msg.attach(MIMEText("New job opening available.", "plain"))
+        # Use provided plain text or a default
+        plain = plain_text or "Please view this email in an HTML-capable client."
+        msg.attach(MIMEText(plain, "plain"))
         msg.attach(MIMEText(html, "html"))
 
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
 
-        service.users().messages().send(
+        result = service.users().messages().send(
             userId="me",
             body={"raw": raw}
         ).execute()
 
-        logger.info(f"Email sent to {len(bcc_list)} users")
+        logger.info(f"✅ Email sent: message_id={result.get('id')}")
         return True
 
     except Exception as e:
-        logger.error(f"Email failed: {e}")
+        logger.error(f"❌ Email failed: {e}")
         return False
 
 
@@ -192,14 +196,43 @@ def send_job_notification(job: dict):
 
 def send_verification_email(recipient: str, verification_url: str):
 
+    subject = "Verify your email - HiringCircle"
+
     html = f"""
     <html>
-    <body>
-        <h2>Welcome to HiringCircle</h2>
-        <p>Please verify your email:</p>
-        <a href="{verification_url}">Verify Email</a>
-    </body>
+      <body style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px;">
+        <div style="background:#2563eb;color:white;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
+          <h1 style="margin:0;">HiringCircle</h1>
+        </div>
+
+        <div style="background:#f9fafb;padding:30px;border:1px solid #e5e7eb;border-radius:0 0 8px 8px;">
+          <h2 style="color:#1f2937;">Verify Your Email</h2>
+          <p>Hello,</p>
+          <p>Please verify your email by clicking below:</p>
+
+          <div style="text-align:center;margin:30px 0;">
+            <a href="{verification_url}"
+               style="background:#2563eb;color:white;padding:12px 30px;text-decoration:none;border-radius:6px;">
+              Verify Email
+            </a>
+          </div>
+
+          <p style="font-size:14px;">Or copy this link:<br>{verification_url}</p>
+
+          <hr>
+          <p style="font-size:12px;">
+            If you didn't create this account, you can safely ignore this email.
+          </p>
+        </div>
+      </body>
     </html>
     """
 
-    return send_email_gmail_api([recipient], [], "Verify your account", html)
+    plain_text = f"""Hello,
+
+Please verify your email by clicking the link below:
+{verification_url}
+
+If you didn't create this account, you can safely ignore this email."""
+
+    return send_email_gmail_api([recipient], [], subject, html, plain_text)
