@@ -74,54 +74,56 @@ def resend_verification(payload: EmailCheckRequest, db: Session = Depends(get_db
     }
 
 
-# ==========================================================
-# EMAIL FUNCTION (UPDATED - GMAIL API TOKEN FLOW)
-# ==========================================================
-def send_verification_email(email: str, token: str):
-    print("===== EMAIL DEBUG START =====")
-    print("TARGET EMAIL:", email)
-    print("TOKEN:", token[:10] + "...")
+def send_verification_email(email: str, token: str) -> bool:
+    try:
+        print("===== EMAIL DEBUG START =====")
+        print("TARGET EMAIL:", email)
+        print("TOKEN:", token[:10] + "...")
 
-    BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
-    verify_link = f"{BACKEND_URL}/verify?token={token}"
-    
-    subject = "Verify your email - HiringCircle"
+        # --------------------------------------------------
+        # URL FIX (VERY IMPORTANT)
+        # --------------------------------------------------
+        FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+        verify_link = f"{FRONTEND_URL}/verify?token={token}"
 
-    # HTML email
-    html_body = f"""
-    <html>
-      <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <div style="background-color: #2563eb; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-          <h1 style="margin: 0;">{EMAIL_FROM_NAME}</h1>
-        </div>
-        <div style="background-color: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
-          <h2 style="color: #1f2937;">Verify Your Email</h2>
-          <p>Hello,</p>
-          <p>Please verify your email by clicking below:</p>
+        print("🔗 VERIFY LINK:", verify_link)
 
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="{verify_link}" 
-               style="background-color: #2563eb; color: white; padding: 12px 30px; 
-                      text-decoration: none; border-radius: 6px;">
-              Verify Email
-            </a>
-          </div>
+        subject = "Verify your email - HiringCircle"
 
-          <p style="font-size: 14px;">
-            Or copy this link:<br>
-            {verify_link}
-          </p>
+        # --------------------------------------------------
+        # EMAIL BODY
+        # --------------------------------------------------
+        html_body = f"""
+        <html>
+          <body style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px;">
+            <div style="background:#2563eb;color:white;padding:20px;text-align:center;border-radius:8px 8px 0 0;">
+              <h1 style="margin:0;">{EMAIL_FROM_NAME}</h1>
+            </div>
 
-          <hr>
-          <p style="font-size: 12px;">
-            If you didn’t create this account, ignore this email.
-          </p>
-        </div>
-      </body>
-    </html>
-    """
+            <div style="background:#f9fafb;padding:30px;border:1px solid #e5e7eb;border-radius:0 0 8px 8px;">
+              <h2 style="color:#1f2937;">Verify Your Email</h2>
+              <p>Hello,</p>
+              <p>Please verify your email by clicking below:</p>
 
-    plain_body = f"""
+              <div style="text-align:center;margin:30px 0;">
+                <a href="{verify_link}" 
+                   style="background:#2563eb;color:white;padding:12px 30px;text-decoration:none;border-radius:6px;">
+                  Verify Email
+                </a>
+              </div>
+
+              <p style="font-size:14px;">Or copy this link:<br>{verify_link}</p>
+
+              <hr>
+              <p style="font-size:12px;">
+                If you didn’t create this account, ignore this email.
+              </p>
+            </div>
+          </body>
+        </html>
+        """
+
+        plain_body = f"""
 Hello,
 
 Verify your email:
@@ -130,36 +132,54 @@ Verify your email:
 If you didn’t create this account, ignore this email.
 """
 
-    try:
+        # --------------------------------------------------
+        # GMAIL SERVICE
+        # --------------------------------------------------
         print("🚀 Initializing Gmail API...")
         service = get_gmail_service()
+
+        if not service:
+            print("❌ Gmail service not initialized")
+            return False
+
         print("✅ Gmail API ready")
 
+        # --------------------------------------------------
+        # BUILD MESSAGE
+        # --------------------------------------------------
         message = MIMEMultipart("alternative")
         message["to"] = email
         message["subject"] = subject
+
+        # Optional but recommended
+        message["from"] = os.getenv("EMAIL_FROM", "noreply@hiringcircle.us")
 
         message.attach(MIMEText(plain_body, "plain"))
         message.attach(MIMEText(html_body, "html"))
 
         raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
 
+        # --------------------------------------------------
+        # SEND EMAIL
+        # --------------------------------------------------
         print("📧 Sending email...")
+
         sent = service.users().messages().send(
             userId="me",
             body={"raw": raw_message}
         ).execute()
 
-        print("✅ Email sent:", sent["id"])
+        print("✅ Email sent:", sent.get("id"))
         print("===== EMAIL DEBUG END =====")
+
         return True
 
     except Exception as e:
-        print(f"❌ EMAIL ERROR: {str(e)}")
+        print("❌ EMAIL ERROR:", str(e))
+        import traceback
         print(traceback.format_exc())
         print("===== EMAIL DEBUG END =====")
         return False
-
 # ==========================================================
 # CHECK EMAIL AVAILABILITY
 # ==========================================================
