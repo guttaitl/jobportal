@@ -11,12 +11,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # ==========================================================
-# LOAD ENV FIRST (correct path for your setup)
+# LOAD ENV FIRST
 # ==========================================================
 
 print("🔥 New MAIN FILE LOADED")
 
-# Your .env is in backend/ (same folder as main.py)
 env_path = Path(__file__).resolve().parent / ".env"
 print(f"🔍 Looking for .env at: {env_path}")
 print(f"🔍 File exists: {env_path.exists()}")
@@ -25,7 +24,6 @@ if env_path.exists():
     load_dotenv(dotenv_path=env_path, override=True)
     print(f"✅ .env loaded from: {env_path}")
 else:
-    # Fallback: try parent directory just in case
     env_path = Path(__file__).resolve().parent.parent / ".env"
     if env_path.exists():
         load_dotenv(dotenv_path=env_path, override=True)
@@ -42,17 +40,14 @@ print(f"🔍 DATABASE_URL: {os.getenv('DATABASE_URL')}")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
-    raise RuntimeError(
-        "❌ DATABASE_URL is missing. "
-        "Check that your .env file is actually named '.env' (Windows may hide .txt extension)"
-    )
+    raise RuntimeError("❌ DATABASE_URL is missing.")
 
 print("✅ Environment loaded")
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 # ==========================================================
-# LOGGING (Performance-friendly)
+# LOGGING
 # ==========================================================
 
 logging.basicConfig(level=logging.INFO)
@@ -61,12 +56,16 @@ for logger_name in ["uvicorn", "uvicorn.error", "uvicorn.access", "httpx"]:
     logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 # ==========================================================
-# IMPORTS (safe now that env is loaded & validated)
+# IMPORTS
 # ==========================================================
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
+# ✅ FIXED: correct middleware imports
+from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 
 from api.db import engine
 from api.models import Base
@@ -94,6 +93,16 @@ app = FastAPI(
     version="2.3.0",
     description="AI-Powered Recruitment Platform API",
 )
+
+# ==========================================================
+# ✅ PROXY + HTTPS FIX (Railway)
+# ==========================================================
+
+# VERY IMPORTANT: no extra params here
+app.add_middleware(ProxyHeadersMiddleware)
+
+# Forces HTTPS
+app.add_middleware(HTTPSRedirectMiddleware)
 
 # ==========================================================
 # CORS
@@ -157,7 +166,7 @@ os.makedirs(uploads_dir, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 # ==========================================================
-# STARTUP EVENTS (Optimized)
+# STARTUP EVENTS
 # ==========================================================
 
 @app.on_event("startup")
