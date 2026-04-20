@@ -64,7 +64,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 # ✅ FIXED: correct middleware imports
-from starlette.middleware.proxy_headers import ProxyHeadersMiddleware
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 
 from api.db import engine
@@ -97,9 +96,6 @@ app = FastAPI(
 # ==========================================================
 # ✅ PROXY + HTTPS FIX (Railway)
 # ==========================================================
-
-# VERY IMPORTANT: no extra params here
-app.add_middleware(ProxyHeadersMiddleware)
 
 # Forces HTTPS
 app.add_middleware(HTTPSRedirectMiddleware)
