@@ -3,10 +3,10 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-
+from api.utils.ai_job_description import generate_structured_job_content
+from api.utils.email_sender import send_job_notification
 from api.db import get_db
 from api.models import JobPosting
-from api.utils.email_sender import send_job_notification
 
 router = APIRouter(prefix="/jobs")
 
@@ -177,9 +177,26 @@ def create_job(job: JobBase, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_job)
 
-    # Send email notification
+    # ===============================
+    # SEND EMAIL (WITH AI FORMATTER)
+    # ===============================
     email_sent = False
     try:
+        from api.utils.ai_job_description import generate_structured_job_content
+        from api.utils.email_sender import send_job_notification
+
+        # 🔥 Generate structured AI content
+        structured = generate_structured_job_content(
+            job_title=job.title,
+            experience=job.requirements,
+            rate=str(job.salary_min) if job.salary_min else None,
+            company_name=job.company,
+            location=job.location,
+            employment_type=job.job_type,
+            industry=None  # safe
+        )
+
+        # 🔥 Prepare job dict for email
         job_dict = {
             "jobid": job_id,
             "job_title": job.title,
@@ -187,11 +204,14 @@ def create_job(job: JobBase, db: Session = Depends(get_db)):
             "location": job.location,
             "employment_type": job.job_type,
             "job_description": job.description,
-            "skills": "",
-            "responsibilities": "",
+            "skills": "",  # fallback only
+            "responsibilities": "",  # fallback only
             "user_name": ""
         }
-        email_sent = send_job_notification(job_dict)
+
+        # 🔥 Send email with structured data
+        email_sent = send_job_notification(job_dict, structured)
+
     except Exception as e:
         print(f"Email error: {e}")
 

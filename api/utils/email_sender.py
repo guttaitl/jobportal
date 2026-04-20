@@ -103,21 +103,34 @@ def send_email_gmail_api(to_list, bcc_list, subject, html, plain_text=None):
 # EMAIL HTML BUILDER
 # ==========================================================
 
-def build_job_email_html(job: dict):
+def build_job_email_html(job: dict, structured=None):
 
     role = job.get("job_title", "")
     company = job.get("user_company") or "HiringCircle"
     location = job.get("location", "-")
     job_type = job.get("employment_type", "Contract")
     description = job.get("job_description", "")
-    skills = job.get("skills", "")
-    responsibilities = job.get("responsibilities", "")
-    poster_name = job.get("user_name", "")
+    if structured:
+        skills = structured.get("skills", [])
+        responsibilities = structured.get("responsibilities", [])
+        description = structured.get("description", job.get("job_description", ""))
+    else:
+        skills = job.get("skills", "")
+        responsibilities = job.get("responsibilities", "")
+        description = job.get("job_description", "")
+        poster_name = job.get("user_name", "")
 
-    apply_url = f"https://www.hiringcircle.us/apply/{job.get('jobid')}"
+    apply_url = f"https://www.hiringcircle.us/apply/{job.get('public_id') or job.get('jobid')}"
 
-    skills_html = "".join(f"<li>{s}</li>" for s in skills.split("\n") if s.strip())
-    resp_html = "".join(f"<li>{r}</li>" for r in responsibilities.split("\n") if r.strip())
+    if isinstance(skills, list):
+        skills_html = "".join(f"<li>{s}</li>" for s in skills if s)
+    else:
+        skills_html = "".join(f"<li>{s}</li>" for s in skills.split("\n") if s.strip())
+
+    if isinstance(responsibilities, list):
+        resp_html = "".join(f"<li>{r}</li>" for r in responsibilities if r)
+    else:
+        resp_html = "".join(f"<li>{r}</li>" for r in responsibilities.split("\n") if r.strip())
 
     html = f"""
 <!DOCTYPE html>
@@ -169,7 +182,7 @@ Apply Now
 # SEND JOB EMAIL
 # ==========================================================
 
-def send_job_notification(job: dict):
+def send_job_notification(job: dict, structured=None):
     config = get_email_config()
     
     # Get TO from env
@@ -180,13 +193,17 @@ def send_job_notification(job: dict):
     
     # Get BCC list from env
     bcc_raw = config.get("bcc", "")
-    bcc_list = [e.strip() for e in bcc_raw.split(",") if e.strip()]
+    bcc_list = [
+        email.strip()
+        for email in (config.get("bcc") or "").split(",")
+        if email.strip()
+    ]
     
     if not bcc_list:
         logger.warning("JOB_ALERT_BCC not configured")
     
     subject = f"New Job Opening: {job.get('job_title', '')}"
-    html = build_job_email_html(job)
+    html = build_job_email_html(job, structured)
     
     return send_email_gmail_api([to_email], bcc_list, subject, html)
 

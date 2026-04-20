@@ -1,3 +1,76 @@
+# =========================
+# ENV / SECRETS (CRITICAL)
+# =========================
 .env
+.env.*
+*.env
+*.env.local
+*.env.production
+*.env.development
+
+# =========================
+# PYTHON (BACKEND)
+# =========================
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+*.sqlite3
+*.db
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# Logs
+*.log
+
+# =========================
+# NODE / NEXT.JS (FRONTEND)
+# =========================
+node_modules/
+.next/
+out/
+dist/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =========================
+# BUILD / CACHE
+# =========================
+.cache/
+*.cache
+*.tsbuildinfo
+
+# =========================
+# OS FILES
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# IDE / EDITOR
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# TEST / COVERAGE
+# =========================
+coverage/
+htmlcov/
+
+# =========================
+# MISC
+# =========================
+*.zip
+*.tar
+*.gz
+*.bak

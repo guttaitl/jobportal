@@ -12,6 +12,9 @@ except Exception as e:
     print("❌ OpenAI init failed:", e)
 
 
+# ==========================================================
+# MAIN FUNCTION (FULLY AI DRIVEN)
+# ==========================================================
 def generate_structured_job_content(
     job_title: str,
     experience: str,
@@ -19,11 +22,10 @@ def generate_structured_job_content(
     company_name: str = None,
     location: str = None,
     employment_type: str = None,
+    industry: str = None,
 ):
     """
-    SINGLE SOURCE OF TRUTH
-    No hardcoded skills.
-    Always dynamic.
+    FULLY AI DRIVEN — NO HARDCODING
     """
 
     if not client:
@@ -32,78 +34,78 @@ def generate_structured_job_content(
 
     try:
         prompt = f"""
-            You are a senior enterprise technical recruiter.
+You are a senior enterprise technical recruiter.
 
-            Generate a PREMIUM job posting (NOT generic).
+Generate a HIGH-QUALITY, REALISTIC job posting.
 
-            INPUT:
-            Role: {job_title}
-            Experience: {experience}
-            Rate: {rate}
-            Company: {company_name}
-            Location: {location}
+-----------------------------------
+INPUT
+-----------------------------------
+Role: {job_title}
+Experience: {experience}
+Rate: {rate}
+Company: {company_name}
+Location: {location}
+Employment Type: {employment_type}
+Industry (if known): {industry}
 
-            -----------------------------------
-            STRICT EXPERIENCE LOGIC (MANDATORY)
-            -----------------------------------
-            - 0–3 years → junior developer (learning focus)
-            - 4–8 years → strong hands-on engineer
-            - 9–12 years → senior engineer (ownership + optimization)
-            - 13+ years → architect / lead (design + scalability + leadership)
+-----------------------------------
+CRITICAL INSTRUCTIONS
+-----------------------------------
 
-            -----------------------------------
-            DESCRIPTION RULES
-            -----------------------------------
-            - MUST include years of experience explicitly
-            - MUST reflect seniority correctly
-            - NEVER say:
-            ❌ "entry-level"
-            ❌ "recent graduate"
-            - For 13+ years:
-            ✔ system design
-            ✔ distributed systems
-            ✔ scalability
-            ✔ leadership / mentoring
-            - Use enterprise tone (BFSI / large-scale systems if relevant)
+1. NO GENERIC OUTPUT
+- Do NOT reuse common templates
+- Do NOT repeat phrases across jobs
 
-            -----------------------------------
-            SKILLS RULES
-            -----------------------------------
-            - ONLY real technologies
-            - NO generic words like "problem solving"
-            - For senior roles include:
-            ✔ architecture
-            ✔ cloud
-            ✔ distributed systems
-            ✔ performance tuning
+2. ROLE ACCURACY (VERY IMPORTANT)
+- Skills MUST strictly match the role
+- Example:
+  - Mainframe → ONLY mainframe technologies
+  - .NET → ONLY Microsoft stack
+  - Java → ONLY Java ecosystem
+- NEVER mix unrelated technologies
 
-            -----------------------------------
-            RESPONSIBILITIES RULE (VERY IMPORTANT)
-            -----------------------------------
-            Each line MUST follow:
+3. NO ASSUMPTIONS
+- Do NOT assume BFSI unless clearly implied by company
+- Do NOT inject Cloud/Microservices unless role requires it
 
-            → ACTION + TECHNOLOGY + PURPOSE
+4. RATE + EXPERIENCE INTELLIGENCE
+- Higher experience or rate → more advanced tools + architecture
+- Lower experience → simpler tools
 
-            Examples:
-            - Design scalable microservices using Spring Boot to support high-volume transactions
-            - Optimize Spark jobs for memory and compute efficiency in large-scale data pipelines
+5. SKILLS QUALITY
+- Minimum 8 skills
+- Maximum 12 skills
+- Each skill must be:
+  ✔ specific
+  ✔ relevant
+  ✔ non-generic
 
-            -----------------------------------
-            OUTPUT REQUIREMENTS
-            -----------------------------------
-            - Minimum 8–10 responsibilities
-            - Responsibilities must be DETAILED (enterprise level)
-            - Skills must be role + experience aligned
-            - Description must be 4–6 lines (strong, not generic)
+6. RESPONSIBILITIES QUALITY
+- Minimum 8 responsibilities
+- Each must follow:
+  ACTION + TECHNOLOGY + PURPOSE
+- Must reflect real-world work
 
-            -----------------------------------
-            RETURN JSON:
-            {{
-            "description": "...",
-            "required_skills": ["..."],
-            "responsibilities": ["..."]
-            }}
-            """
+7. DESCRIPTION QUALITY
+- 4–6 lines
+- Must include experience level
+- Must match company + role context
+- No fluff
+
+-----------------------------------
+STRICT OUTPUT FORMAT
+-----------------------------------
+Return ONLY valid JSON:
+
+{{
+  "description": "...",
+  "required_skills": ["..."],
+  "responsibilities": ["..."]
+}}
+
+DO NOT include any extra text.
+"""
 
         response = client.responses.create(
             model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
@@ -118,7 +120,35 @@ def generate_structured_job_content(
         data = json.loads(text[start:end])
 
         print("✅ AI SUCCESS")
-        return data
+
+        # ==========================================================
+        # LIGHT VALIDATION (NO HARDCODING)
+        # ==========================================================
+        skills = data.get("required_skills", [])
+        responsibilities = data.get("responsibilities", [])
+
+        # Clean duplicates
+        skills = list(dict.fromkeys([s.strip() for s in skills if s]))
+        responsibilities = list(dict.fromkeys([r.strip() for r in responsibilities if r]))
+
+        # Retry if weak output (AI self-correction)
+        if len(skills) < 6 or len(responsibilities) < 6:
+            print("⚠️ Weak AI output — retrying...")
+            return generate_structured_job_content(
+                job_title,
+                experience,
+                rate,
+                company_name,
+                location,
+                employment_type,
+                industry
+            )
+
+        return {
+            "description": data.get("description", ""),
+            "skills": skills[:12],
+            "responsibilities": responsibilities[:12]
+        }
 
     except Exception as e:
         print("❌ AI FAILED:", e)

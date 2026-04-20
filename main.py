@@ -1,7 +1,7 @@
 # ==========================================================
 # HIRING CIRCLE API
 # ==========================================================
-print("🔥 MAIN FILE LOADED")
+
 import os
 import logging
 import threading
@@ -9,6 +9,61 @@ import warnings
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+# ==========================================================
+# LOAD ENV FIRST (correct path for your setup)
+# ==========================================================
+
+print("🔥 New MAIN FILE LOADED")
+
+# Your .env is in backend/ (same folder as main.py)
+env_path = Path(__file__).resolve().parent / ".env"
+print(f"🔍 Looking for .env at: {env_path}")
+print(f"🔍 File exists: {env_path.exists()}")
+
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path, override=True)
+    print(f"✅ .env loaded from: {env_path}")
+else:
+    # Fallback: try parent directory just in case
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path, override=True)
+        print(f"✅ .env loaded from: {env_path}")
+    else:
+        print("⚠️ WARNING: .env file not found!")
+
+print("🔍 ENV FILE LOADED")
+print(f"🔍 DATABASE_URL: {os.getenv('DATABASE_URL')}")
+
+# ==========================================================
+# ENV VALIDATION
+# ==========================================================
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError(
+        "❌ DATABASE_URL is missing. "
+        "Check that your .env file is actually named '.env' (Windows may hide .txt extension)"
+    )
+
+print("✅ Environment loaded")
+
+warnings.filterwarnings("ignore", category=FutureWarning)
+
+# ==========================================================
+# LOGGING (Performance-friendly)
+# ==========================================================
+
+logging.basicConfig(level=logging.INFO)
+
+for logger_name in ["uvicorn", "uvicorn.error", "uvicorn.access", "httpx"]:
+    logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+# ==========================================================
+# IMPORTS (safe now that env is loaded & validated)
+# ==========================================================
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -30,40 +85,8 @@ from api.routes.match_routes import router as match_router
 # Services
 from services.resume_indexer import start_pipeline_background, start_scheduler
 
-
 # ==========================================================
-# LOAD ENV
-# ==========================================================
-
-if os.getenv("RAILWAY_ENVIRONMENT") is None:
-    env_path = Path(__file__).parent / ".env"
-    load_dotenv(dotenv_path=env_path)
-
-warnings.filterwarnings("ignore", category=FutureWarning)
-
-# ==========================================================
-# LOGGING (Performance-friendly)
-# ==========================================================
-
-logging.basicConfig(level=logging.INFO)
-
-# Reduce noisy logs
-for logger_name in ["uvicorn", "uvicorn.error", "uvicorn.access", "httpx"]:
-    logging.getLogger(logger_name).setLevel(logging.WARNING)
-
-
-# ==========================================================
-# ENV VALIDATION
-# ==========================================================
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise RuntimeError("❌ DATABASE_URL is missing")
-
-print("✅ Environment loaded")
-
-# ==========================================================
-# FASTAPI APP (ONLY ONE INSTANCE ✅)
+# FASTAPI APP
 # ==========================================================
 
 app = FastAPI(
@@ -73,20 +96,12 @@ app = FastAPI(
 )
 
 # ==========================================================
-# CORS (FIXED)
+# CORS
 # ==========================================================
-
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "https://hiringcircleusa.vercel.app",
-    "https://www.hiringcircle.us",
-    "https://hiringcircle.us",
-]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # 🔥 TEMP FIX (important)
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -105,7 +120,6 @@ app.include_router(resume_router, prefix="/api")
 app.include_router(ai_match_router, prefix="/api")
 app.include_router(vector_search_router, prefix="/api")
 app.include_router(match_router, prefix="/api")
-
 
 print("✅ API routes registered")
 
