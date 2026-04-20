@@ -7,7 +7,7 @@ import logging
 import threading
 import warnings
 from pathlib import Path
-
+from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 
 # ==========================================================
@@ -88,6 +88,13 @@ app = FastAPI(
     version="2.3.0",
     description="AI-Powered Recruitment Platform API",
 )
+
+class ForceHTTPSMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        request.scope["scheme"] = "https"
+        return await call_next(request)
+
+app.add_middleware(ForceHTTPSMiddleware)
 
 # ==========================================================
 # CORS
