@@ -12,7 +12,6 @@ from api.utils.email_sender import send_job_notification
 from api.utils.ai_job_description import generate_structured_job_content
 from api.db import get_db
 from datetime import datetime
-from api.utils.role_checker import require_role
 from api.utils.security import require_role
 
 router = APIRouter()

@@ -1,17 +1,21 @@
-from fastapi import APIRouter, Query, HTTPException, Depends, status
+from fastapi import APIRouter, Query, HTTPException, Depends, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
+import logging
+
 from api.utils.ai_job_description import generate_structured_job_content
 from api.utils.email_sender import send_job_notification
 from api.db import get_db
 from api.models import JobPosting
+from api.utils.security import require_role
 
 router = APIRouter(prefix="/jobs")
+logger = logging.getLogger(__name__)
 
 # =========================
-# 📦 REQUEST MODEL (matches frontend)
+# 📦 REQUEST MODEL
 # =========================
 
 class JobBase(BaseModel):
@@ -28,92 +32,36 @@ class JobBase(BaseModel):
 
 
 # =========================
-# 🔥 GET RECENT JOBS (MUST BE FIRST - before /jobs/{job_id})
+# 🔥 GET RECENT JOBS
 # =========================
 
 @router.get("/recent")
-def get_recent_jobs(
-    limit: int = Query(10, ge=1, le=50),
-    db: Session = Depends(get_db)
-):
-    """
-    Get recently posted jobs (ordered by created_at desc)
-    """
+def get_recent_jobs(limit: int = Query(10, ge=1, le=50), db: Session = Depends(get_db)):
     jobs = db.query(JobPosting).order_by(JobPosting.created_at.desc()).limit(limit).all()
 
     return {
-        "jobs": [
-            {
-                "job_id": j.jobid,
-                "job_title": j.job_title,
-                "client_name": j.client_name,
-                "location": j.location,
-                "description": j.job_description,
-                "created_at": j.created_at,
-                "employment_type": j.employment_type,
-                "salary": j.salary
-            }
-            for j in jobs
-        ],
-        "total": len(jobs),
-        "limit": limit
+        "success": True,
+        "jobs": [serialize_job(j) for j in jobs],
+        "total": len(jobs)
     }
 
 
 # =========================
-# 🔵 GET ALL JOBS (with optional recent filter via query param)
+# 🔵 GET ALL JOBS
 # =========================
 
 @router.get("/")
 def get_jobs(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
-    recent: bool = Query(False),
-    recent_limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db)
 ):
-    """
-    Get all jobs (paginated) OR recent jobs if ?recent=true
-    """
-    if recent:
-        jobs = db.query(JobPosting).order_by(JobPosting.created_at.desc()).limit(recent_limit).all()
-        return {
-            "jobs": [
-                {
-                    "job_id": j.jobid,
-                    "title": j.job_title,
-                    "company": j.client_name,
-                    "location": j.location,
-                    "description": j.job_description,
-                    "created_at": j.created_at,
-                    "employment_type": j.employment_type,
-                    "salary": j.salary
-                }
-                for j in jobs
-            ],
-            "total": len(jobs),
-            "limit": recent_limit,
-            "recent": True
-        }
-    
-    # Default: paginated list
     total = db.query(JobPosting).count()
     jobs = db.query(JobPosting).offset(skip).limit(limit).all()
 
     return {
-        "jobs": [
-            {
-                "job_id": j.jobid,
-                "title": j.job_title,
-                "company": j.client_name,
-                "location": j.location,
-                "description": j.job_description,
-                "created_at": j.created_at,
-                "employment_type": j.employment_type,
-                "salary": j.salary
-            }
-            for j in jobs
-        ],
+        "success": True,
+        "jobs": [serialize_job(j) for j in jobs],
         "total": total,
         "skip": skip,
         "limit": limit
@@ -121,42 +69,32 @@ def get_jobs(
 
 
 # =========================
-# 🟡 GET JOB BY ID (MUST BE AFTER /jobs/recent)
+# 🟡 GET JOB BY ID
 # =========================
 
 @router.get("/{job_id}")
 def get_job(job_id: str, db: Session = Depends(get_db)):
-    """
-    Get a specific job by ID
-    """
     job = db.query(JobPosting).filter(JobPosting.jobid == job_id).first()
 
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
     return {
-        "job_id": job.jobid,
-        "title": job.job_title,
-        "company": job.client_name,
-        "location": job.location,
-        "description": job.job_description,
-        "experience": job.experience,
-        "skills": job.skills,
-        "employment_type": job.employment_type,
-        "salary": job.salary,
-        "work_authorization": job.work_authorization,
-        "visa_transfer": job.visa_transfer,
-        "created_at": job.created_at,
-        "applicants_count": job.applicants_count
+        "success": True,
+        "job": serialize_job(job)
     }
 
 
 # =========================
-# 🟢 CREATE JOB
+# 🟢 CREATE JOB (AI + EMAIL)
 # =========================
 
-@router.post("/jobs", status_code=status.HTTP_201_CREATED)
-def create_job(job: JobBase, db: Session = Depends(get_db)):
+@router.post("/", status_code=status.HTTP_201_CREATED)
+def create_job(
+    job: JobBase,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
     timestamp = str(int(datetime.utcnow().timestamp()))[-7:]
     job_id = f"JOB{timestamp}"
 
@@ -166,7 +104,6 @@ def create_job(job: JobBase, db: Session = Depends(get_db)):
         job_description=job.description,
         location=job.location,
         experience=job.requirements,
-        skills=None,
         employment_type=job.job_type,
         salary=str(job.salary_min) if job.salary_min else None,
         client_name=job.company,
@@ -177,65 +114,27 @@ def create_job(job: JobBase, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_job)
 
-    # ===============================
-    # SEND EMAIL (WITH AI FORMATTER)
-    # ===============================
-    email_sent = False
-    try:
-        from api.utils.ai_job_description import generate_structured_job_content
-        from api.utils.email_sender import send_job_notification
-
-        # 🔥 Generate structured AI content
-        structured = generate_structured_job_content(
-            job_title=job.title,
-            experience=job.requirements,
-            rate=str(job.salary_min) if job.salary_min else None,
-            company_name=job.company,
-            location=job.location,
-            employment_type=job.job_type,
-            industry=None  # safe
-        )
-
-        # 🔥 Prepare job dict for email
-        job_dict = {
-            "jobid": job_id,
-            "job_title": job.title,
-            "user_company": job.company,
-            "location": job.location,
-            "employment_type": job.job_type,
-            "job_description": job.description,
-            "skills": "",  # fallback only
-            "responsibilities": "",  # fallback only
-            "user_name": ""
-        }
-
-        # 🔥 Send email with structured data
-        email_sent = send_job_notification(job_dict, structured)
-
-    except Exception as e:
-        print(f"Email error: {e}")
+    # 🔥 Background AI + Email
+    background_tasks.add_task(handle_job_email, job, job_id)
 
     return {
+        "success": True,
         "id": job_id,
-        "message": "Job created successfully",
-        "email_sent": email_sent
+        "message": "Job created successfully"
     }
 
+
 # =========================
-# 🟠 UPDATE JOB (PUT)
+# 🟠 UPDATE JOB
 # =========================
 
 @router.put("/{job_id}")
 def update_job(job_id: str, job: JobBase, db: Session = Depends(get_db)):
-    """
-    Update an existing job
-    """
     existing_job = db.query(JobPosting).filter(JobPosting.jobid == job_id).first()
 
     if not existing_job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    # Update fields
     existing_job.job_title = job.title
     existing_job.client_name = job.company
     existing_job.location = job.location
@@ -245,10 +144,9 @@ def update_job(job_id: str, job: JobBase, db: Session = Depends(get_db)):
     existing_job.salary = str(job.salary_min) if job.salary_min else None
 
     db.commit()
-    db.refresh(existing_job)
 
     return {
-        "id": job_id,
+        "success": True,
         "message": "Job updated successfully"
     }
 
@@ -259,9 +157,6 @@ def update_job(job_id: str, job: JobBase, db: Session = Depends(get_db)):
 
 @router.delete("/{job_id}")
 def delete_job(job_id: str, db: Session = Depends(get_db)):
-    """
-    Delete a job posting
-    """
     job = db.query(JobPosting).filter(JobPosting.jobid == job_id).first()
 
     if not job:
@@ -270,11 +165,14 @@ def delete_job(job_id: str, db: Session = Depends(get_db)):
     db.delete(job)
     db.commit()
 
-    return {"message": "Job deleted successfully"}
+    return {
+        "success": True,
+        "message": "Job deleted successfully"
+    }
 
 
 # =========================
-# 🔍 SEARCH JOBS (optional)
+# 🔍 SEARCH JOBS
 # =========================
 
 @router.get("/search")
@@ -283,11 +181,8 @@ def search_jobs(
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db)
 ):
-    """
-    Search jobs by title, description, or location
-    """
     search_term = f"%{q}%"
-    
+
     jobs = db.query(JobPosting).filter(
         (JobPosting.job_title.ilike(search_term)) |
         (JobPosting.job_description.ilike(search_term)) |
@@ -295,17 +190,55 @@ def search_jobs(
     ).limit(limit).all()
 
     return {
-        "jobs": [
-            {
-                "job_id": j.jobid,
-                "title": j.job_title,
-                "company": j.client_name,
-                "location": j.location,
-                "description": j.job_description,
-                "created_at": j.created_at
-            }
-            for j in jobs
-        ],
-        "query": q,
-        "total": len(jobs)
+        "success": True,
+        "jobs": [serialize_job(j) for j in jobs],
+        "total": len(jobs),
+        "query": q
     }
+
+
+# =========================
+# 🧠 HELPERS
+# =========================
+
+def serialize_job(j):
+    return {
+        "job_id": j.jobid,
+        "title": j.job_title,
+        "company": j.client_name,
+        "location": j.location,
+        "description": j.job_description,
+        "created_at": j.created_at,
+        "employment_type": j.employment_type,
+        "salary": j.salary
+    }
+
+
+def handle_job_email(job: JobBase, job_id: str):
+    try:
+        structured = generate_structured_job_content(
+            job_title=job.title,
+            experience=job.requirements,
+            rate=str(job.salary_min) if job.salary_min else None,
+            company_name=job.company,
+            location=job.location,
+            employment_type=job.job_type,
+            industry=None
+        )
+
+        job_dict = {
+            "jobid": job_id,
+            "job_title": job.title,
+            "user_company": job.company,
+            "location": job.location,
+            "employment_type": job.job_type,
+            "job_description": job.description,
+            "skills": "",
+            "responsibilities": "",
+            "user_name": ""
+        }
+
+        send_job_notification(job_dict, structured)
+
+    except Exception as e:
+        logger.error(f"Email error: {e}")
