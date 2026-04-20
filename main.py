@@ -62,10 +62,6 @@ for logger_name in ["uvicorn", "uvicorn.error", "uvicorn.access", "httpx"]:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-
-# ✅ FIXED: correct middleware imports
-from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
-
 from api.db import engine
 from api.models import Base
 
@@ -92,13 +88,6 @@ app = FastAPI(
     version="2.3.0",
     description="AI-Powered Recruitment Platform API",
 )
-
-# ==========================================================
-# ✅ PROXY + HTTPS FIX (Railway)
-# ==========================================================
-
-# Forces HTTPS
-app.add_middleware(HTTPSRedirectMiddleware)
 
 # ==========================================================
 # CORS
