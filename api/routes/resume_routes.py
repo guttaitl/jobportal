@@ -1,23 +1,26 @@
 """
 Resume Routes - Search, Upload, and Management
 """
-
 from fastapi import APIRouter, File, UploadFile, Form, HTTPException, Depends, Request, Query, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from enum import Enum
+
 import uuid
 import os
 import shutil
 import re
 from datetime import datetime
+
 from sqlalchemy.orm import Session
 from sqlalchemy import text, or_, and_
+
 from api.utils.resume_parser import extract_text
 from api.db import get_db
 from api.models import Submission
 from api.utils.security import get_current_user
+
 
 router = APIRouter(tags=["Resumes"])
 
@@ -62,37 +65,51 @@ class ResumeSearchResponse(BaseModel):
 
 # ============ HELPER FUNCTIONS ============
 
-def process_resume_file(file_path: str, db: Session, resume_hash: str = None):
+async def process_resume_file(file_path: str, db: Session, resume_hash: str = None):
     try:
-        # 🔥 ALWAYS use parser (handles PDF/DOCX/TXT safely)
-        resume_text = extract_text(file_path)
-
-        if not resume_text:
-            resume_text = ""
-
-        # 🔥 Clean text (remove bad chars)
+        resume_text = extract_text(file_path) or ""
         resume_text = re.sub(r'[^\x00-\x7F]+', ' ', resume_text)
 
-        # 🔥 Generate embedding
         from ..utils.embedding_utils import generate_embedding
-        embedding = generate_embedding(resume_text)
-
-        # 🔥 Insert into DB
-        db.execute("""
-            INSERT INTO submissions (candidate_name, full_name, resume_text, embedding, resume_hash)
-            VALUES (:name, :full_name, :text, :embedding, :hash)
-        """, {
-            "name": os.path.basename(file_path),
-            "full_name": os.path.basename(file_path),
-            "text": resume_text,
-            "embedding": embedding,
-            "hash": resume_hash
-        })
-
+        embedding = await generate_embedding(resume_text)  # ✅ FIXED
+        db.execute(
+            text("""
+                INSERT INTO submissions (
+                    submission_id,
+                    candidate_name,
+                    full_name,
+                    resume_text,
+                    embedding,
+                    resume_hash,
+                    created_at
+                )
+                VALUES (
+                    :submission_id,
+                    :name,
+                    :full_name,
+                    :text,
+                    :embedding,
+                    :hash,
+                    :created_at
+                )
+            """),
+            {
+                "submission_id": str(uuid.uuid4()),
+                "name": os.path.basename(file_path),
+                "full_name": os.path.basename(file_path),
+                "text": resume_text,
+                "embedding": embedding,
+                "hash": resume_hash,
+                "created_at": datetime.utcnow()
+            }
+        )
         db.commit()
 
     except Exception as e:
-        print(f"❌ Failed processing file {file_path}: {e}")
+        db.rollback()
+        db.close()
+        db = next(get_db())
+        print(f"❌ Failed processing file {file_path} → {e}")
 
 def parse_boolean_query(query: str) -> dict:
     """
@@ -132,7 +149,6 @@ def parse_boolean_query(query: str) -> dict:
             terms["include"] = main_query.split()
     
     return terms
-
 
 def build_search_conditions(terms: dict, param_prefix: str = "term") -> tuple:
     """
@@ -178,7 +194,6 @@ def build_search_conditions(terms: dict, param_prefix: str = "term") -> tuple:
     where_clause = " AND ".join(conditions) if conditions else ""
     return where_clause, params
 
-
 def build_simple_search_conditions(search_terms: List[str], param_prefix: str = "term") -> tuple:
     """
     Build safe SQL search conditions for simple space-separated terms.
@@ -202,9 +217,7 @@ def build_simple_search_conditions(search_terms: List[str], param_prefix: str = 
     where_clause = " AND ".join(conditions) if conditions else ""
     return where_clause, params
 
-
 # ============ UPLOAD ENDPOINTS ============
-
 @router.post("/resumes/upload", response_model=ResumeUploadResponse)
 async def upload_resume(
     request: Request,
@@ -267,7 +280,11 @@ async def upload_resume(
         
         # Resolve file
         uploaded_file = file or resume
-        
+        if not uploaded_file:
+            raise HTTPException(
+                status_code=400,
+                detail="Resume file is required"
+            )
         # Generate IDs
         submission_uuid = str(uuid.uuid4())
         resume_id = str(uuid.uuid4())[:8].upper()
@@ -300,12 +317,12 @@ async def upload_resume(
             candidate_name=resolved_name,
             full_name=resolved_name,
             resume_text=resume_text,
-            
-            # Job reference (if applying)
+            resume_hash=file_name or submission_uuid,   # ✅ ADD THIS
+
             job_id=job_id,
             job_title="",
             job_description="",
-            
+                    
             # AI scoring fields
             match_score=None,
             semantic_similarity=None,
@@ -339,7 +356,7 @@ async def upload_resume(
             status="pending",
             file_url=file_url,
             job_id=job_id,
-            submission_id=str(submission.id)
+            submission_id=submission.submission_id
             
         )
         
@@ -349,7 +366,6 @@ async def upload_resume(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to upload: {str(e)}"
         )
-
 
 # ============ SEARCH ENDPOINTS ============
 
@@ -366,7 +382,6 @@ async def search_resumes(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
 ):
     """
     Search resumes with filters and Boolean search support.

@@ -208,30 +208,28 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
 
         db.execute(
             text("""
-            INSERT INTO usersdata
-            (
-                full_name,
-                email,
-                contact,
-                company,
-                role,
-                password_hash,
-                verified,
-                verification_token,
-                created_date
-            )
-            VALUES
-            (
-                :full_name,
-                :email,
-                :contact,
-                :company,
-                :role,
-                :password_hash,
-                false,
-                :token,
-                NOW()
-            )
+                INSERT INTO usersdata (
+                    full_name,
+                    email,
+                    contact,
+                    company,
+                    role,
+                    password_hash,
+                    verified,
+                    verification_token,
+                    created_date
+                )
+                VALUES (
+                    :full_name,
+                    :email,
+                    :contact,
+                    :company,
+                    :role,
+                    :password_hash,
+                    false,
+                    :token,
+                    NOW()
+                )
             """),
             {
                 "full_name": payload.full_name,

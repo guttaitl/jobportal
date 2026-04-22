@@ -235,7 +235,7 @@ def handle_job_email(job: JobBase, job_id: str):
             "job_description": job.description,
             "skills": "",
             "responsibilities": "",
-            "user_name": ""
+            "user_name": job.company or "Employer"
         }
 
         send_job_notification(job_dict, structured)

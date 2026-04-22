@@ -23,7 +23,6 @@ def generate_file_hash(file_path):
 
     return hash_md5.hexdigest()
 
-
 def index_new_resumes():
     db: Session = SessionLocal()
 
@@ -46,10 +45,8 @@ def index_new_resumes():
                 continue
 
             try:
-                # 🔑 Generate hash safely
                 file_hash = generate_file_hash(file_path)
 
-                # ✅ Check if already processed (FIXED)
                 exists = db.execute(
                     text("SELECT 1 FROM submissions WHERE resume_hash = :hash"),
                     {"hash": file_hash}
@@ -60,11 +57,13 @@ def index_new_resumes():
 
                 print(f"📥 Processing: {file_name}")
 
-                # 🔥 MAIN PROCESS
-                process_resume_file(
-                    file_path=file_path,
-                    db=db,
-                    resume_hash=file_hash
+                # ✅ FIXED ASYNC CALL
+                asyncio.run(
+                    process_resume_file(
+                        file_path=file_path,
+                        db=db,
+                        resume_hash=file_hash
+                    )
                 )
 
                 new_count += 1
@@ -74,7 +73,6 @@ def index_new_resumes():
 
         print(f"✅ New resumes processed: {new_count}")
 
-        # ⚡ Only run embeddings if new resumes found
         if new_count > 0:
             print("⚡ Generating embeddings...")
             asyncio.run(run_indexer())
@@ -86,7 +84,6 @@ def index_new_resumes():
 
     finally:
         db.close()
-
 
 def index_embeddings():
     print("⚡ Generating embeddings...")
