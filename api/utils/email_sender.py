@@ -19,9 +19,12 @@ from openai import OpenAI
 # LOAD ENV
 # ==========================================================
 
+# Try .env.development first, fallback to .env
 ROOT_ENV = Path(__file__).resolve().parent.parent / ".env.development"
+if not ROOT_ENV.exists():
+    ROOT_ENV = Path(__file__).resolve().parent.parent / ".env"
 
-if os.getenv("RAILWAY_ENVIRONMENT") is None:
+if os.getenv("RAILWAY_ENVIRONMENT") is None and ROOT_ENV.exists():
     load_dotenv(ROOT_ENV)
 
 logger = logging.getLogger("email_service")
@@ -106,10 +109,11 @@ def send_email_gmail_api(to_list, bcc_list, subject, html, plain_text=None):
 def build_job_email_html(job: dict, structured=None):
 
     role = job.get("job_title", "")
-    company = job.get("user_company") or "HiringCircle"
+    company = job.get("user_company") or job.get("poster_company") or "HiringCircle"
     location = job.get("location", "-")
     job_type = job.get("employment_type", "Contract")
     description = job.get("job_description", "")
+    poster_name = job.get("user_name") or job.get("poster_company") or "HiringCircle"
     if structured:
         skills = structured.get("skills", [])
         responsibilities = structured.get("responsibilities", [])
@@ -118,7 +122,6 @@ def build_job_email_html(job: dict, structured=None):
         skills = job.get("skills", "")
         responsibilities = job.get("responsibilities", "")
         description = job.get("job_description", "")
-        poster_name = job.get("user_name", "")
 
     apply_url = f"https://www.hiringcircle.us/apply/{job.get('public_id') or job.get('jobid')}"
 
