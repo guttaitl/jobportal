@@ -3,7 +3,9 @@ import threading
 import time
 import hashlib
 import asyncio
+from sqlalchemy import text
 from sqlalchemy.orm import Session
+
 from api.db import SessionLocal
 from api.routes.resume_routes import process_resume_file
 from scripts.ingest_resumes import run as run_indexer
@@ -47,9 +49,9 @@ def index_new_resumes():
                 # 🔑 Generate hash safely
                 file_hash = generate_file_hash(file_path)
 
-                # ✅ Check if already processed
+                # ✅ Check if already processed (FIXED)
                 exists = db.execute(
-                    "SELECT 1 FROM submissions WHERE resume_hash = :hash",
+                    text("SELECT 1 FROM submissions WHERE resume_hash = :hash"),
                     {"hash": file_hash}
                 ).fetchone()
 
@@ -58,7 +60,7 @@ def index_new_resumes():
 
                 print(f"📥 Processing: {file_name}")
 
-                # 🔥 MAIN PROCESS (parsing happens inside)
+                # 🔥 MAIN PROCESS
                 process_resume_file(
                     file_path=file_path,
                     db=db,
