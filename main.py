@@ -94,7 +94,7 @@ class ForceHTTPSMiddleware(BaseHTTPMiddleware):
         request.scope["scheme"] = "https"
         return await call_next(request)
 
-app.add_middleware(ForceHTTPSMiddleware)
+# app.add_middleware(ForceHTTPSMiddleware)
 
 # ==========================================================
 # CORS
@@ -114,14 +114,13 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix="/api")
 app.include_router(verify_router, prefix="/api")
-app.include_router(job_router, prefix="/api")
-app.include_router(employer_router, prefix="/api")
-app.include_router(password_router, prefix="/api")
-app.include_router(resume_router, prefix="/api")
-app.include_router(ai_match_router, prefix="/api")
-app.include_router(vector_search_router, prefix="/api")
-app.include_router(match_router, prefix="/api")
-
+app.include_router(job_router)
+app.include_router(employer_router)
+app.include_router(password_router)
+app.include_router(resume_router)
+app.include_router(ai_match_router)
+app.include_router(vector_search_router)
+app.include_router(match_router)
 print("✅ API routes registered")
 
 # ==========================================================

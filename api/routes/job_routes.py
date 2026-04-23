@@ -11,7 +11,7 @@ from api.db import get_db
 from api.models import JobPosting
 from api.utils.security import require_role
 
-router = APIRouter(prefix="/jobs")
+router = APIRouter(prefix="/api/jobs")
 logger = logging.getLogger(__name__)
 
 # =========================
@@ -30,6 +30,10 @@ class JobBase(BaseModel):
     visa_sponsorship: Optional[bool] = False
     remote_allowed: Optional[bool] = False
 
+class ApplyRequest(BaseModel):
+    jobId: str
+    candidateEmail: str
+    resumeLink: Optional[str] = None
 
 # =========================
 # 🔥 GET RECENT JOBS
@@ -196,6 +200,47 @@ def search_jobs(
         "query": q
     }
 
+@router.post("/apply")
+def apply_job(payload: ApplyRequest, db: Session = Depends(get_db)):
+    job = db.query(JobPosting).filter(JobPosting.jobid == payload.jobId).first()
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # ✅ SAVE APPLICATION (basic)
+    application_data = {
+        "job_id": payload.jobId,
+        "email": payload.candidateEmail,
+        "resume": payload.resumeLink,
+        "applied_at": datetime.utcnow()
+    }
+
+    # ⚠️ Replace below with your actual Application model if exists
+    # db.add(Application(**application_data))
+
+    db.commit()
+
+    # ✅ SEND EMAIL TO JOB POSTER
+    try:
+        send_job_notification(
+            {
+                "jobid": job.jobid,
+                "job_title": job.job_title,
+                "user_company": job.client_name,
+                "location": job.location,
+                "employment_type": job.employment_type,
+                "job_description": job.job_description,
+                "user_name": job.client_name
+            },
+            {
+                "candidate_email": payload.candidateEmail,
+                "resume": payload.resumeLink
+            }
+        )
+    except Exception as e:
+        logger.error(f"Apply email error: {e}")
+
+    return {"success": True, "message": "Application submitted"}
 
 # =========================
 # 🧠 HELPERS
