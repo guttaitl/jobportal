@@ -11,7 +11,7 @@ from api.db import get_db
 from api.models import JobPosting
 from api.utils.security import require_role
 
-router = APIRouter(prefix="/api/jobs")
+router = APIRouter(prefix="/jobs")
 logger = logging.getLogger(__name__)
 
 # =========================
