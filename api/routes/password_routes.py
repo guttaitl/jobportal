@@ -46,6 +46,10 @@ class ChangePasswordRequest(BaseModel):
 
 @router.post("/forgot-password")
 async def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Send password reset email to user.
+    Generates a reset token and sends email with reset link.
+    """
     try:
         result = db.execute(
             text("""
@@ -57,6 +61,7 @@ async def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(
         ).fetchone()
 
         if not result:
+            # Return success even if email not found (security best practice)
             return {
                 "success": True,
                 "message": "If an account exists with this email, a reset link has been sent.",
@@ -118,6 +123,9 @@ async def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(
 
 @router.post("/reset-password")
 async def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Reset password using token from email.
+    """
     try:
         result = db.execute(
             text("""
@@ -130,8 +138,10 @@ async def reset_password(request: ResetPasswordRequest, db: Session = Depends(ge
 
         if not result:
             raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
         if result.used:
             raise HTTPException(status_code=400, detail="Token already used")
+
         if result.expires_at < datetime.utcnow():
             raise HTTPException(status_code=400, detail="Token expired")
 
@@ -146,7 +156,10 @@ async def reset_password(request: ResetPasswordRequest, db: Session = Depends(ge
                     updated_at = NOW()
                 WHERE email = :email
             """),
-            {"password_hash": password_hash, "email": result.email},
+            {
+                "password_hash": password_hash,
+                "email": result.email,
+            },
         )
 
         db.execute(
@@ -159,6 +172,7 @@ async def reset_password(request: ResetPasswordRequest, db: Session = Depends(ge
         )
 
         db.commit()
+
         return {"success": True, "message": "Password reset successfully"}
 
     except HTTPException:
@@ -179,6 +193,9 @@ async def change_password(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
+    """
+    Change password for authenticated user.
+    """
     try:
         from api.utils.security import verify_password, hash_password
 
@@ -195,6 +212,7 @@ async def change_password(
 
         if not result:
             raise HTTPException(status_code=404, detail="User not found")
+
         if not verify_password(request.current_password, result.password_hash):
             raise HTTPException(status_code=400, detail="Current password is incorrect")
 
@@ -207,10 +225,14 @@ async def change_password(
                     updated_at = NOW()
                 WHERE email = :email
             """),
-            {"password_hash": new_password_hash, "email": user_email},
+            {
+                "password_hash": new_password_hash,
+                "email": user_email,
+            },
         )
 
         db.commit()
+
         return {"success": True, "message": "Password changed successfully"}
 
     except HTTPException:
@@ -227,6 +249,9 @@ async def change_password(
 
 @router.get("/verify-reset-token")
 async def verify_reset_token(token: str, db: Session = Depends(get_db)):
+    """
+    Verify if a reset token is valid.
+    """
     try:
         result = db.execute(
             text("""
@@ -252,6 +277,8 @@ async def verify_reset_token(token: str, db: Session = Depends(get_db)):
 # =========================================================
 
 def _send_password_reset_email(email: str, name: str, reset_link: str) -> bool:
+    """Send password reset email using Gmail API."""
+
     html = f"""<!DOCTYPE html>
 <html>
 <head>
