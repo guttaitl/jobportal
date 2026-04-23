@@ -48,15 +48,18 @@ class ForceHTTPSMiddleware(BaseHTTPMiddleware):
         request.scope["scheme"] = "https"
         return await call_next(request)
 
-app.add_middleware(ForceHTTPSMiddleware)
-
 # ==========================================================
 # CORS
 # ==========================================================
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://hiringcircleusa.vercel.app",
+        "https://hiringcircle.us",
+        "https://www.hiringcircle.us",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -105,10 +108,6 @@ def version():
         "env": os.getenv("RAILWAY_ENVIRONMENT"),
         "status": "running"
     }
-
-@app.options("/{full_path:path}")
-async def preflight_handler(full_path: str):
-    return Response(status_code=200)
 
 # ==========================================================
 # STATIC FILES
