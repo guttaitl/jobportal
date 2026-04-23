@@ -224,12 +224,12 @@ class VectorSearchService:
 vector_service = VectorSearchService()
 
 async def ensure_indices(db: Session):
-    if vector_service.resume_index.ntotal == 0:
-        await vector_service.build_resume_index(db)
+    async with vector_service._lock:
+        if vector_service.resume_index.ntotal == 0:
+            await vector_service.build_resume_index(db)
 
-    if vector_service.job_index.ntotal == 0:
-        await vector_service.build_job_index(db)
-
+        if vector_service.job_index.ntotal == 0:
+            await vector_service.build_job_index(db)
 # =========================================================
 # PYDANTIC MODELS
 # =========================================================
