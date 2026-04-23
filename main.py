@@ -97,31 +97,67 @@ class ForceHTTPSMiddleware(BaseHTTPMiddleware):
 # app.add_middleware(ForceHTTPSMiddleware)
 
 # ==========================================================
-# CORS
+# CORS (FIXED)
 # ==========================================================
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://hiringcircle.us",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # ==========================================================
-# ROUTES
+# ROUTES (FIXED PREFIX)
 # ==========================================================
 
 app.include_router(auth_router, prefix="/api")
 app.include_router(verify_router, prefix="/api")
-app.include_router(job_router)
-app.include_router(employer_router)
-app.include_router(password_router)
-app.include_router(resume_router)
-app.include_router(ai_match_router)
-app.include_router(vector_search_router)
-app.include_router(match_router)
+app.include_router(job_router, prefix="/api")
+app.include_router(employer_router, prefix="/api")
+app.include_router(password_router, prefix="/api")
+app.include_router(resume_router, prefix="/api")
+app.include_router(ai_match_router, prefix="/api")
+app.include_router(vector_search_router, prefix="/api")
+app.include_router(match_router, prefix="/api")
+
 print("✅ API routes registered")
+
+# ==========================================================
+# DATABASE INIT
+# ==========================================================
+
+Base.metadata.create_all(bind=engine)
+
+print("✅ Database tables ensured")
+
+# ==========================================================
+# BACKGROUND SERVICES
+# ==========================================================
+
+def start_background_services():
+    try:
+        start_pipeline_background()
+        start_scheduler()
+    except Exception as e:
+        print(f"⚠️ Background services error: {e}")
+
+threading.Thread(target=start_background_services, daemon=True).start()
+
+print("🚀 Application started successfully")
+
+# ==========================================================
+# STATIC FILES
+# ==========================================================
+
+uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(uploads_dir, exist_ok=True)
+
+app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 # ==========================================================
 # HEALTH CHECK
