@@ -99,7 +99,6 @@ async def process_resume_file(file_path: str, db: Session, resume_hash: str = No
                 "full_name": os.path.basename(file_path),
                 "text": resume_text,
                 "embedding": embedding,
-                "hash": resume_hash,
                 "created_at": datetime.utcnow()
             }
         )
@@ -222,11 +221,10 @@ def build_simple_search_conditions(search_terms: List[str], param_prefix: str = 
 async def upload_resume(
     request: Request,
     db: Session = Depends(get_db),
-    
+
     # File
-    file: Optional[UploadFile] = File(None),
-    resume: Optional[UploadFile] = File(None),
-    
+    file: UploadFile = File(...),
+
     # Candidate info
     full_name: Optional[str] = Form(None),
     applicant_name: Optional[str] = Form(None),
@@ -234,7 +232,7 @@ async def upload_resume(
     applicant_email: Optional[str] = Form(None),
     phone: Optional[str] = Form(None),
     applicant_phone: Optional[str] = Form(None),
-    
+
     # Additional fields
     skill: Optional[str] = Form(None),
     experience: Optional[str] = Form(None),
@@ -245,85 +243,69 @@ async def upload_resume(
     state: Optional[str] = Form(None),
     applicant_state: Optional[str] = Form(None),
     work_preference: Optional[str] = Form(None),
-    
-    # Job application fields (optional - if not provided, just uploads resume)
+
+    # Job fields
     job_id: Optional[str] = Form(None),
     user_id: Optional[str] = Form(None),
 ):
-    """
-    Upload resume. Can be used for:
-    1. Job application (when job_id is provided)
-    2. Resume database upload (when job_id is not provided)
-    """
+    print("🔥 UPLOAD ENDPOINT HIT")
+
     try:
-        # Resolve field names
+        # Resolve fields
         resolved_name = applicant_name or full_name
         resolved_email = applicant_email or email
         resolved_phone = applicant_phone or phone
         resolved_visa = applicant_visa or visa
         resolved_city = applicant_city or city
         resolved_state = applicant_state or state
-        resolved_skills = skill or ""
-        resolved_experience = experience or ""
-        
+
         # Validate required fields
         if not resolved_name:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Full name is required"
-            )
+            raise HTTPException(status_code=422, detail="Full name is required")
         if not resolved_email:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Email is required"
-            )
-        
-        # Resolve file
-        uploaded_file = file or resume
+            raise HTTPException(status_code=422, detail="Email is required")
+
+        # File check
+        uploaded_file = file
+        print("📄 FILE:", uploaded_file.filename if uploaded_file else "None")
+
         if not uploaded_file:
-            raise HTTPException(
-                status_code=400,
-                detail="Resume file is required"
-            )
-        # Generate IDs
+            raise HTTPException(status_code=400, detail="Resume file is required")
+
+        # IDs
         submission_uuid = str(uuid.uuid4())
         resume_id = str(uuid.uuid4())[:8].upper()
-        
-        # Save file if provided
-        file_url = None
-        file_name = None
-        file_path = None 
-        if uploaded_file:
-            storage_path = os.environ.get("RESUME_STORAGE_PATH", "/tmp/resumes")
-            os.makedirs(storage_path, exist_ok=True)
-            
-            file_extension = os.path.splitext(uploaded_file.filename)[1]
-            file_name = f"{resume_id}{file_extension}"
-            file_path = os.path.join(storage_path, file_name)
-            
-            with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(uploaded_file.file, buffer)
-            
-            file_url = f"/storage/resumes/{file_name}"
-        
+
+        # Save file
+        storage_path = os.environ.get("RESUME_STORAGE_PATH", "/tmp/resumes")
+        os.makedirs(storage_path, exist_ok=True)
+
+        file_extension = os.path.splitext(uploaded_file.filename)[1]
+        file_name = f"{resume_id}{file_extension}"
+        file_path = os.path.join(storage_path, file_name)
+
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(uploaded_file.file, buffer)
+
+        file_url = f"/storage/resumes/{file_name}"
+
+        # Extract text
         resume_text = ""
-        if uploaded_file and file_path:
+        if file_path:
             resume_text = extract_text(file_path)
 
-        # Create Submission record
+        # Save to DB
         submission = Submission(
             submission_id=submission_uuid,
             resume_id=int(uuid.uuid4().int % 2147483647),
             candidate_name=resolved_name,
             full_name=resolved_name,
             resume_text=resume_text,
-            resume_hash=file_name or submission_uuid,   # ✅ ADD THIS
-
+            
             job_id=job_id,
             job_title="",
             job_description="",
-                    
-            # AI scoring fields
+
             match_score=None,
             semantic_similarity=None,
             score_breakdown=None,
@@ -334,22 +316,21 @@ async def upload_resume(
             fabrication_observations=None,
             scoring_status="pending",
             report_path=None,
-            
-            # Timestamps
+
             created_at=datetime.utcnow(),
             processed_at=None
         )
-        
+
         db.add(submission)
         db.commit()
         db.refresh(submission)
-        
-        # Determine response message
-        if job_id:
-            message = "Job application submitted successfully - pending AI review"
-        else:
-            message = "Resume uploaded successfully to database"
-        
+
+        message = (
+            "Job application submitted successfully - pending AI review"
+            if job_id else
+            "Resume uploaded successfully to database"
+        )
+
         return ResumeUploadResponse(
             id=resume_id,
             message=message,
@@ -357,13 +338,13 @@ async def upload_resume(
             file_url=file_url,
             job_id=job_id,
             submission_id=submission.submission_id
-            
         )
-        
+
     except Exception as e:
         db.rollback()
+        print("❌ UPLOAD ERROR:", str(e))
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             detail=f"Failed to upload: {str(e)}"
         )
 

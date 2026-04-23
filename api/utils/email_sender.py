@@ -123,7 +123,7 @@ def build_job_email_html(job: dict, structured=None):
         responsibilities = job.get("responsibilities", "")
         description = job.get("job_description", "")
 
-    apply_url = f"https://www.hiringcircle.us/apply/{job.get('public_id') or job.get('jobid')}"
+    apply_url = f"https://www.hiringcircle.us/jobs/{job.get('public_id') or job.get('jobid')}/apply"
 
     if isinstance(skills, list):
         skills_html = "".join(f"<li>{s}</li>" for s in skills if s)
