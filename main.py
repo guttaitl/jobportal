@@ -84,6 +84,7 @@ from services.resume_indexer import start_pipeline_background, start_scheduler
 # ==========================================================
 
 app = FastAPI(
+    redirect_slashes=True,
     title="Hiring Circle API",
     version="2.3.0",
     description="AI-Powered Recruitment Platform API",
