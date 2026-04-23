@@ -24,10 +24,7 @@ if os.getenv("RAILWAY_ENVIRONMENT") is None:
 # --------------------------------------------------
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-<<<<<<< HEAD
 print("DATABASE_URL Loaded:", "YES" if DATABASE_URL else "NO")
-=======
->>>>>>> 5d2a440b29f790bcaf0987af11c53518ac88b3e2
 
 if not DATABASE_URL:
     raise RuntimeError("❌ DATABASE_URL is not set")
@@ -40,11 +37,8 @@ if DATABASE_URL.startswith("postgres://"):
 if DATABASE_URL.startswith("postgresql://") and "+psycopg2" not in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
-<<<<<<< HEAD
-=======
 print("📦 Using DATABASE_URL:", DATABASE_URL)
 
->>>>>>> 5d2a440b29f790bcaf0987af11c53518ac88b3e2
 # --------------------------------------------------
 # CREATE ENGINE (with retry)
 # --------------------------------------------------
@@ -54,12 +48,8 @@ engine = create_engine(
     pool_pre_ping=True,
     pool_recycle=280,
     pool_size=5,
-<<<<<<< HEAD
     max_overflow=10,
     connect_args={"sslmode": "require"}
-=======
-    max_overflow=10
->>>>>>> 5d2a440b29f790bcaf0987af11c53518ac88b3e2
 )
 
 Base = declarative_base()
@@ -111,11 +101,6 @@ def get_db_conn():
         user=result.username,
         password=result.password,
         host=result.hostname,
-<<<<<<< HEAD
         port=result.port,
         sslmode="require"
     )
-=======
-        port=result.port
-    )
->>>>>>> 5d2a440b29f790bcaf0987af11c53518ac88b3e2

@@ -2,22 +2,19 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
 import psycopg2
 import os
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
-<<<<<<< HEAD
 # --------------------------------------------------
 # ENV
 # --------------------------------------------------
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://www.hiringcircle.us").strip()
 
-FRONTEND_URL = os.getenv(
-    "FRONTEND_URL",
-    "http://localhost:3000"  # safe default for local
-)
-
-# Fix postgres:// → postgresql://
+# Fix postgres:// → postgresql:// for psycopg2 compatibility
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
@@ -25,22 +22,28 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 # --------------------------------------------------
 # VERIFY EMAIL
 # --------------------------------------------------
-=======
-DATABASE_URL = os.getenv("DATABASE_URL")
-FRONTEND_LOGIN_URL = os.getenv("FRONTEND_URL", "https://www.hiringcircle.us")
->>>>>>> 5d2a440b29f790bcaf0987af11c53518ac88b3e2
 
 @router.get("/verify")
 def verify_email(token: str):
-
+    """
+    Verify a user's email via verification token.
+    Redirects to the frontend with ?verified=true|false.
+    """
     if not DATABASE_URL:
+        logger.error("DATABASE_URL not configured")
         raise HTTPException(status_code=500, detail="Database not configured")
 
+    if not token:
+        return RedirectResponse(url=f"{FRONTEND_URL}/?verified=false")
+
+    conn = None
+    cur = None
+
     try:
-<<<<<<< HEAD
         conn = psycopg2.connect(DATABASE_URL, sslmode="require")
         cur = conn.cursor()
 
+        # Atomic update: verify user and invalidate token in one query
         cur.execute(
             """
             UPDATE usersdata
@@ -48,70 +51,30 @@ def verify_email(token: str):
                 verification_token = NULL
             WHERE verification_token = %s
             RETURNING id;
-=======
-        conn = psycopg2.connect(DATABASE_URL)
-        cur = conn.cursor()
-
-        # 🔍 Check token
-        cur.execute(
-            """
-            SELECT id FROM usersdata
-            WHERE verification_token = %s
->>>>>>> 5d2a440b29f790bcaf0987af11c53518ac88b3e2
             """,
-            (token,)
+            (token,),
         )
 
         user = cur.fetchone()
+        conn.commit()
 
         if not user:
-<<<<<<< HEAD
-            # ❌ invalid / expired token
-            return RedirectResponse(
-                url=f"{FRONTEND_URL}/?verified=false"
-            )
+            logger.warning(f"Invalid or expired verification token attempted: {token[:8]}...")
+            return RedirectResponse(url=f"{FRONTEND_URL}/?verified=false")
 
-        conn.commit()
-
-        # ✅ success
-        return RedirectResponse(
-            url=f"{FRONTEND_URL}/?verified=true"
-        )
-
-    except Exception as e:
-        print("❌ VERIFY ERROR:", str(e))
-
-        return RedirectResponse(
-            url=f"{FRONTEND_URL}/?verified=false"
-        )
-=======
-            raise HTTPException(status_code=400, detail="Invalid or expired verification link")
-
-        # ✅ Update user
-        cur.execute(
-            """
-            UPDATE usersdata
-            SET verified = true,
-                verification_token = NULL
-            WHERE verification_token = %s
-            """,
-            (token,)
-        )
-
-        conn.commit()
+        logger.info(f"Email verified for user id: {user[0]}")
+        return RedirectResponse(url=f"{FRONTEND_URL}/?verified=true")
 
     except psycopg2.Error as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
->>>>>>> 5d2a440b29f790bcaf0987af11c53518ac88b3e2
+        logger.error(f"Database error during email verification: {e}")
+        return RedirectResponse(url=f"{FRONTEND_URL}/?verified=false")
+
+    except Exception as e:
+        logger.error(f"Unexpected error during email verification: {e}")
+        return RedirectResponse(url=f"{FRONTEND_URL}/?verified=false")
 
     finally:
-        if 'cur' in locals():
+        if cur:
             cur.close()
-        if 'conn' in locals():
+        if conn:
             conn.close()
-<<<<<<< HEAD
-=======
-
-    # 🚀 Redirect to frontend login page after verification
-    return {"success": True, "message": "Email verified successfully"}
->>>>>>> 5d2a440b29f790bcaf0987af11c53518ac88b3e2

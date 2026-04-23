@@ -25,11 +25,8 @@ REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-<<<<<<< HEAD
 security = HTTPBearer(auto_error=False)
-=======
 security = HTTPBearer()
->>>>>>> 5d2a440b29f790bcaf0987af11c53518ac88b3e2
 
 # ==========================================================
 # PASSWORD FUNCTIONS
@@ -89,7 +86,6 @@ def decode_token(token: str) -> dict:
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
-<<<<<<< HEAD
     if credentials is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -101,21 +97,15 @@ def get_current_user(
         raise HTTPException(401, "Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(401, "Invalid token")
-=======
 
     token = credentials.credentials
     payload = decode_token(token)
->>>>>>> 5d2a440b29f790bcaf0987af11c53518ac88b3e2
 
     if payload.get("type") != "access":
         raise HTTPException(401, "Invalid token type")
 
     return payload
 
-<<<<<<< HEAD
-=======
-
->>>>>>> 5d2a440b29f790bcaf0987af11c53518ac88b3e2
 # ==========================================================
 # ROLE GUARD
 # ==========================================================
@@ -144,9 +134,5 @@ def admin_required(user=Depends(get_current_user)):
 
     if role != "ADMIN":
         raise HTTPException(403, "Admin access required")
+    return user
 
-<<<<<<< HEAD
-    return user
-=======
-    return user
->>>>>>> 5d2a440b29f790bcaf0987af11c53518ac88b3e2

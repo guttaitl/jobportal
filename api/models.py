@@ -57,8 +57,5 @@ class JobPosting(Base):
     applicants_count = Column(Integer, default=0)
     responsibilities = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
-<<<<<<< HEAD
     updated_at = Column(DateTime)
-=======
     updated_at = Column(DateTime)
->>>>>>> 5d2a440b29f790bcaf0987af11c53518ac88b3e2
