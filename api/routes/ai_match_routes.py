@@ -11,17 +11,26 @@ import re
 import logging
 import hashlib
 import asyncio
-import numpy as np
 
-# ─── FAISS + Sentence Transformers ───────────────────────
+# ─── SOFT IMPORTS: FAISS + Embeddings ────────────────────
+VECTOR_SEARCH_AVAILABLE = False
+_faiss = None
+_SentenceTransformer = None
+_np = None
+
 try:
-    import faiss
-    from sentence_transformers import SentenceTransformer
+    import numpy as _np
+    import faiss as _faiss
+    from sentence_transformers import SentenceTransformer as _SentenceTransformerClass
+
+    _SentenceTransformer = _SentenceTransformerClass
     VECTOR_SEARCH_AVAILABLE = True
-except ImportError:
-    VECTOR_SEARCH_AVAILABLE = False
-    faiss = None
-    SentenceTransformer = None
+    logging.getLogger(__name__).info("✅ FAISS vector search enabled")
+except ImportError as _import_err:
+    logging.getLogger(__name__).warning(
+        f"⚠️  FAISS vector search disabled (missing deps: {_import_err}). "
+        "Install: pip install faiss-cpu sentence-transformers numpy"
+    )
 
 from api.db import get_db
 from api.utils.security import get_current_user
@@ -59,16 +68,16 @@ class VectorSearchService:
             return
         if not VECTOR_SEARCH_AVAILABLE:
             raise RuntimeError(
-                "FAISS vector search requires: pip install faiss-cpu sentence-transformers"
+                "FAISS vector search requires: pip install faiss-cpu sentence-transformers numpy"
             )
 
         logger.info(f"Loading embedding model: {model_name}")
-        self.model = SentenceTransformer(model_name)
+        self.model = _SentenceTransformer(model_name)
         self.dim = self.model.get_sentence_embedding_dimension()
 
         # IndexFlatIP with normalized vectors == cosine similarity
-        self.resume_index = faiss.IndexFlatIP(self.dim)
-        self.job_index = faiss.IndexFlatIP(self.dim)
+        self.resume_index = _faiss.IndexFlatIP(self.dim)
+        self.job_index = _faiss.IndexFlatIP(self.dim)
 
         self.resume_ids: List[str] = []   # faiss_idx -> submission_id
         self.job_ids: List[str] = []      # faiss_idx -> jobid
@@ -78,7 +87,7 @@ class VectorSearchService:
         self._lock = asyncio.Lock()
         self._initialized = True
 
-    def encode(self, texts: List[str]) -> np.ndarray:
+    def encode(self, texts: List[str]):
         """L2-normalized embeddings for cosine-similarity search."""
         return self.model.encode(
             texts,
@@ -128,7 +137,7 @@ class VectorSearchService:
             ).fetchall()
 
             self.resume_ids = []
-            self.resume_index = faiss.IndexFlatIP(self.dim)
+            self.resume_index = _faiss.IndexFlatIP(self.dim)
 
             if not rows:
                 self._resume_built = True
@@ -154,7 +163,7 @@ class VectorSearchService:
             ).fetchall()
 
             self.job_ids = []
-            self.job_index = faiss.IndexFlatIP(self.dim)
+            self.job_index = _faiss.IndexFlatIP(self.dim)
 
             if not rows:
                 self._job_built = True
@@ -183,7 +192,6 @@ class VectorSearchService:
             for score, idx in zip(scores[0], indices[0]):
                 if idx < 0 or idx >= len(self.resume_ids):
                     continue
-                # cosine [-1,1] → clip negative → scale to [0,100]
                 cosine = float(score)
                 pct = max(0.0, cosine) * 100.0
                 results.append(
@@ -220,16 +228,29 @@ class VectorSearchService:
             return results
 
 
-# Global singleton
-vector_service = VectorSearchService()
+# Global singleton — only instantiated if deps are available
+vector_service: Optional[VectorSearchService] = None
+if VECTOR_SEARCH_AVAILABLE:
+    try:
+        vector_service = VectorSearchService()
+    except Exception as e:
+        logger.error(f"Failed to initialize VectorSearchService: {e}")
+        vector_service = None
+
 
 async def ensure_indices(db: Session):
-    async with vector_service._lock:
-        if vector_service.resume_index.ntotal == 0:
-            await vector_service.build_resume_index(db)
+    """Lazy-load FAISS indices on first matching request."""
+    if vector_service is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Vector search unavailable. Install faiss-cpu sentence-transformers numpy",
+        )
+    if not vector_service._resume_built:
+        await vector_service.build_resume_index(db)
+    if not vector_service._job_built:
+        await vector_service.build_job_index(db)
 
-        if vector_service.job_index.ntotal == 0:
-            await vector_service.build_job_index(db)
+
 # =========================================================
 # PYDANTIC MODELS
 # =========================================================
@@ -256,7 +277,7 @@ class MatchResult(BaseModel):
 
 
 # =========================================================
-# OPTIONAL AI ENRICHMENT (top-k only, to save tokens/latency)
+# OPTIONAL AI ENRICHMENT (top-k only)
 # =========================================================
 
 async def enrich_match_with_ai(job_text: str, resume_text: str) -> dict:
@@ -609,7 +630,7 @@ def get_match_history(
     offset = (page - 1) * limit
 
     query = """
-        SELECT 
+        SELECT
             m.match_id,
             m.job_id,
             j.job_title,
@@ -712,7 +733,7 @@ def get_top_candidates(
         rows = db.execute(
             text(
                 """
-                SELECT 
+                SELECT
                     m.resume_id,
                     COALESCE(s.full_name, 'Unknown Candidate') AS candidate_name,
                     m.match_score,
@@ -759,6 +780,11 @@ async def rebuild_indices(
     Admin endpoint to rebuild FAISS indices from the database.
     Call this after bulk imports or when embeddings drift.
     """
+    if vector_service is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Vector search unavailable. Install faiss-cpu sentence-transformers numpy",
+        )
     await vector_service.build_resume_index(db)
     await vector_service.build_job_index(db)
     return {
