@@ -5,12 +5,12 @@ from typing import Optional, List
 from pydantic import BaseModel
 from openai import AsyncOpenAI
 from datetime import datetime
-import os
-import json
-import re
 import logging
 import hashlib
 import asyncio
+import os
+import json
+import re
 
 # ─── SOFT IMPORTS: FAISS + Embeddings ────────────────────
 VECTOR_SEARCH_AVAILABLE = False
