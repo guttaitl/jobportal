@@ -635,7 +635,6 @@ async def upload_resume(
             candidate_name=resolved_name,
             full_name=resolved_name,
             resume_text=resume_text,
-            resume_hash=file_name or submission_uuid,
             job_id=job_id,
             job_title=job_title,
             job_description="",
