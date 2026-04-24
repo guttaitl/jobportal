@@ -2,21 +2,19 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
 import psycopg2
 import os
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # --------------------------------------------------
 # ENV
 # --------------------------------------------------
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://www.hiringcircle.us").strip()
 
-FRONTEND_URL = os.getenv(
-    "FRONTEND_URL",
-    "http://localhost:3000"  # safe default for local
-)
-
-# Fix postgres:// → postgresql://
+# Fix postgres:// → postgresql:// for psycopg2 compatibility
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
@@ -27,14 +25,25 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 
 @router.get("/verify")
 def verify_email(token: str):
-
+    """
+    Verify a user's email via verification token.
+    Redirects to the frontend with ?verified=true|false.
+    """
     if not DATABASE_URL:
+        logger.error("DATABASE_URL not configured")
         raise HTTPException(status_code=500, detail="Database not configured")
+
+    if not token:
+        return RedirectResponse(url=f"{FRONTEND_URL}/?verified=false")
+
+    conn = None
+    cur = None
 
     try:
         conn = psycopg2.connect(DATABASE_URL, sslmode="require")
         cur = conn.cursor()
 
+        # Atomic update: verify user and invalidate token in one query
         cur.execute(
             """
             UPDATE usersdata
@@ -43,33 +52,29 @@ def verify_email(token: str):
             WHERE verification_token = %s
             RETURNING id;
             """,
-            (token,)
+            (token,),
         )
 
         user = cur.fetchone()
-
-        if not user:
-            # ❌ invalid / expired token
-            return RedirectResponse(
-                url=f"{FRONTEND_URL}/?verified=false"
-            )
-
         conn.commit()
 
-        # ✅ success
-        return RedirectResponse(
-            url=f"{FRONTEND_URL}/?verified=true"
-        )
+        if not user:
+            logger.warning(f"Invalid or expired verification token attempted: {token[:8]}...")
+            return RedirectResponse(url=f"{FRONTEND_URL}/?verified=false")
+
+        logger.info(f"Email verified for user id: {user[0]}")
+        return RedirectResponse(url=f"{FRONTEND_URL}/?verified=true")
+
+    except psycopg2.Error as e:
+        logger.error(f"Database error during email verification: {e}")
+        return RedirectResponse(url=f"{FRONTEND_URL}/?verified=false")
 
     except Exception as e:
-        print("❌ VERIFY ERROR:", str(e))
-
-        return RedirectResponse(
-            url=f"{FRONTEND_URL}/?verified=false"
-        )
+        logger.error(f"Unexpected error during email verification: {e}")
+        return RedirectResponse(url=f"{FRONTEND_URL}/?verified=false")
 
     finally:
-        if 'cur' in locals():
+        if cur:
             cur.close()
-        if 'conn' in locals():
+        if conn:
             conn.close()
