@@ -11,6 +11,9 @@ import re
 import logging
 import hashlib
 import asyncio
+from api.db import get_db
+from api.utils.security import get_current_user
+from api.schemas.ai_match_schema import TopCandidatesResponse, CandidateMatch
 
 # ─── SOFT IMPORTS: FAISS + Embeddings ────────────────────
 VECTOR_SEARCH_AVAILABLE = False
@@ -31,10 +34,6 @@ except ImportError as _import_err:
         f"⚠️  FAISS vector search disabled (missing deps: {_import_err}). "
         "Install: pip install faiss-cpu sentence-transformers numpy"
     )
-
-from api.db import get_db
-from api.utils.security import get_current_user
-from api.schemas.ai_match_schema import TopCandidatesResponse, CandidateMatch
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
