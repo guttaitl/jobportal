@@ -1,11 +1,10 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Float
+from sqlalchemy import Column, Integer, String, Text, DateTime, Float, ForeignKey
 from sqlalchemy.orm import declarative_base, Mapped, mapped_column
 from datetime import datetime
 from typing import Optional
 import uuid
 from api.db import Base
 
-Base = declarative_base()
 
 class Submission(Base):
     __tablename__ = "submissions"
@@ -19,7 +18,9 @@ class Submission(Base):
     resume_text: Mapped[Optional[str]] = mapped_column(Text)
 
     # ✅ This maps to job_postings.jobid
-    job_id: Mapped[Optional[str]] = mapped_column(Text)
+    job_id: Mapped[Optional[str]] = mapped_column(
+        String(10), ForeignKey("job_postings.jobid")
+    )
     job_title: Mapped[Optional[str]] = mapped_column(Text)
     job_description: Mapped[Optional[str]] = mapped_column(Text)
 
@@ -39,6 +40,7 @@ class Submission(Base):
     )
     processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
+
 class JobPosting(Base):
     __tablename__ = "job_postings"
     id = Column(Integer, primary_key=True, index=True)
@@ -57,5 +59,4 @@ class JobPosting(Base):
     applicants_count = Column(Integer, default=0)
     responsibilities = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime)
     updated_at = Column(DateTime)
