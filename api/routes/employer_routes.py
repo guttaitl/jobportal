@@ -54,15 +54,18 @@ def get_employer_jobs(
     result = db.execute(
         text("""
             SELECT
-                jobid,
-                job_title,
-                client_name,
-                location,
-                employment_type,
-                created_at
-            FROM job_postings
-            WHERE posted_by = :email
-            ORDER BY created_at DESC
+                jp.jobid,
+                jp.job_title,
+                jp.client_name,
+                jp.location,
+                jp.employment_type,
+                jp.created_at,
+                COUNT(ja.id) as applicants_count
+            FROM job_postings jp
+            LEFT JOIN job_applications ja ON ja.job_id = jp.jobid
+            WHERE jp.posted_by = :email
+            GROUP BY jp.jobid, jp.job_title, jp.client_name, jp.location, jp.employment_type, jp.created_at
+            ORDER BY jp.created_at DESC
             LIMIT :limit OFFSET :offset
         """),
         {"email": user_email, "limit": limit, "offset": offset},
@@ -76,6 +79,7 @@ def get_employer_jobs(
             "location": row.location,
             "employment_type": row.employment_type,
             "created_at": row.created_at.isoformat() if row.created_at else None,
+            "applicants_count": row.applicants_count or 0,
         }
         for row in result.fetchall()
     ]
@@ -390,6 +394,62 @@ def delete_job(
         db.rollback()
         logger.error(f"Delete error: {e}")
         return {"success": False, "message": f"Failed to delete job: {str(e)}"}
+
+
+# =========================================================
+# BULK DELETE JOBS
+# =========================================================
+
+class BulkDeleteRequest(BaseModel):
+    job_ids: list
+
+@router.post("/employer/jobs/bulk-delete")
+def bulk_delete_jobs(
+    request: BulkDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_role("EMPLOYER")),
+):
+    user_email = current_user.get("email")
+    job_ids = request.job_ids or []
+
+    if not job_ids:
+        return {"success": False, "message": "No jobs selected"}
+
+    try:
+        # Delete related applications first
+        db.execute(
+            text("""
+                DELETE FROM job_applications
+                WHERE job_id = ANY(:job_ids)
+                AND job_id IN (
+                    SELECT jobid FROM job_postings WHERE posted_by = :email
+                )
+            """),
+            {"job_ids": job_ids, "email": user_email},
+        )
+
+        result = db.execute(
+            text("""
+                DELETE FROM job_postings
+                WHERE jobid = ANY(:job_ids) AND posted_by = :email
+            """),
+            {"job_ids": job_ids, "email": user_email},
+        )
+
+        db.commit()
+
+        deleted_count = result.rowcount
+        logger.info(f"Bulk deleted {deleted_count} jobs by {user_email}")
+        return {
+            "success": True,
+            "message": f"Deleted {deleted_count} job(s) successfully",
+            "deleted_count": deleted_count,
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Bulk delete error: {e}")
+        return {"success": False, "message": f"Failed to delete jobs: {str(e)}"}
 
 
 # =========================================================
