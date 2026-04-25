@@ -708,55 +708,63 @@ async def upload_resume(
 @router.get("/resumes/search")
 async def search_resumes(
     q: Optional[str] = Query(None, description="Search query"),
-    skills: Optional[str] = Query(None, description="Comma-separated skills"),
-    experience_min: Optional[int] = Query(None, description="Min years of experience"),
-    experience_max: Optional[int] = Query(None, description="Max years of experience"),
-    location: Optional[str] = Query(None, description="Location"),
-    boolean_mode: bool = Query(False, description="Enable Boolean search"),
-    scoring_status: Optional[str] = Query(None, description="Filter by scoring status"),
-    has_score: Optional[bool] = Query(None, description="Filter by has match score"),
-    page: int = Query(1, ge=1, description="Page number"),
-    limit: int = Query(20, ge=1, le=100, description="Items per page"),
+    skills: Optional[str] = Query(None),
+    experience_min: Optional[int] = Query(None),
+    experience_max: Optional[int] = Query(None),
+    location: Optional[str] = Query(None),
+    boolean_mode: bool = Query(False),
+    scoring_status: Optional[str] = Query(None),
+    has_score: Optional[bool] = Query(None),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """
-    Search resumes with filters and Boolean search support.
-
-    Boolean search examples:
-    - "python AND django" — must have both
-    - "python OR java" — must have either
-    - "python NOT java" — has python but not java
-    """
     try:
         offset = (page - 1) * limit
 
         base_query = "SELECT * FROM submissions WHERE 1=1"
         count_query = "SELECT COUNT(*) FROM submissions WHERE 1=1"
+
         params = {}
         conditions = []
 
-        # Text search (parameterized — safe from SQL injection)
+        # 🔥 REGEX SAFE BOOLEAN NORMALIZATION
         if q:
-            if boolean_mode:
-                terms = parse_boolean_query(q)
-                search_clause, search_params = build_search_conditions(terms, param_prefix="q")
-                if search_clause:
-                    conditions.append(search_clause)
-                    params.update(search_params)
+            normalized_q = re.sub(
+                r"\b(and|or|not)\b",
+                lambda m: m.group(0).upper(),
+                q,
+                flags=re.IGNORECASE
+            )
+
+            use_boolean = boolean_mode or any(
+                op in normalized_q for op in ["AND", "OR", "NOT"]
+            )
+
+            if use_boolean:
+                terms = parse_boolean_query(normalized_q)
+                search_clause, search_params = build_search_conditions(
+                    terms, param_prefix="q"
+                )
             else:
-                search_terms = q.split()
-                search_clause, search_params = build_simple_search_conditions(search_terms, param_prefix="q")
-                if search_clause:
-                    conditions.append(search_clause)
-                    params.update(search_params)
+                search_terms = normalized_q.split()
+                search_clause, search_params = build_simple_search_conditions(
+                    search_terms, param_prefix="q"
+                )
+
+            if search_clause:
+                conditions.append(search_clause)
+                params.update(search_params)
 
         # Skills filter
         if skills:
             skill_list = [s.strip() for s in skills.split(",")]
             for i, skill in enumerate(skill_list):
                 key = f"skill_{i}"
-                conditions.append(f"(resume_text ILIKE :{key} OR skill_matrix ILIKE :{key})")
+                conditions.append(
+                    f"(resume_text ILIKE :{key} OR skill_matrix ILIKE :{key})"
+                )
                 params[key] = f"%{skill}%"
 
         # Location filter
@@ -766,17 +774,16 @@ async def search_resumes(
             )
             params["location"] = f"%{location}%"
 
-        # Scoring status filter
+        # Scoring status
         if scoring_status:
             conditions.append("scoring_status = :scoring_status")
             params["scoring_status"] = scoring_status
 
-        # Has score filter
+        # Score filter
         if has_score is not None:
-            if has_score:
-                conditions.append("match_score IS NOT NULL")
-            else:
-                conditions.append("match_score IS NULL")
+            conditions.append(
+                "match_score IS NOT NULL" if has_score else "match_score IS NULL"
+            )
 
         # Combine conditions
         if conditions:
@@ -784,39 +791,38 @@ async def search_resumes(
             base_query += f" AND {where_clause}"
             count_query += f" AND {where_clause}"
 
-        # Add pagination
+        # Pagination
         base_query += " ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
         params["limit"] = limit
         params["offset"] = offset
 
-        # Execute count query (exclude limit/offset params)
-        count_params = {k: v for k, v in params.items() if k not in ["limit", "offset"]}
-        total_result = db.execute(text(count_query), count_params)
-        total = total_result.scalar()
+        # Count
+        count_params = {
+            k: v for k, v in params.items() if k not in ["limit", "offset"]
+        }
+        total = db.execute(text(count_query), count_params).scalar()
 
-        # Execute search query
-        result = db.execute(text(base_query), params)
-        rows = result.fetchall()
+        # Fetch
+        rows = db.execute(text(base_query), params).fetchall()
 
-        resumes = []
-        for row in rows:
-            resumes.append(
-                {
-                    "submission_id": row.submission_id,
-                    "candidate_name": row.candidate_name,
-                    "full_name": row.full_name,
-                    "job_id": row.job_id,
-                    "job_title": row.job_title,
-                    "match_score": row.match_score,
-                    "semantic_similarity": row.semantic_similarity,
-                    "scoring_status": row.scoring_status,
-                    "confidence_band": row.confidence_band,
-                    "overall_fit": row.final_recommendation,
-                    "report_path": row.report_path,
-                    "created_at": row.created_at.isoformat() if row.created_at else None,
-                    "processed_at": row.processed_at.isoformat() if row.processed_at else None,
-                }
-            )
+        resumes = [
+            {
+                "submission_id": r.submission_id,
+                "candidate_name": r.candidate_name,
+                "full_name": r.full_name,
+                "job_id": r.job_id,
+                "job_title": r.job_title,
+                "match_score": r.match_score,
+                "semantic_similarity": r.semantic_similarity,
+                "scoring_status": r.scoring_status,
+                "confidence_band": r.confidence_band,
+                "overall_fit": r.final_recommendation,
+                "report_path": r.report_path,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "processed_at": r.processed_at.isoformat() if r.processed_at else None,
+            }
+            for r in rows
+        ]
 
         return {
             "success": True,
@@ -825,7 +831,7 @@ async def search_resumes(
             "page": page,
             "limit": limit,
             "query": q,
-            "boolean_mode": boolean_mode,
+            "boolean_mode": use_boolean,
         }
 
     except Exception as e:
@@ -834,8 +840,7 @@ async def search_resumes(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Search failed: {str(e)}",
         )
-
-
+    
 @router.post("/resumes/search/advanced")
 async def advanced_resume_search(
     request: ResumeSearchRequest,
@@ -844,7 +849,6 @@ async def advanced_resume_search(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """Advanced resume search with structured filters."""
     return await search_resumes(
         q=request.query,
         skills=",".join(request.skills) if request.skills else None,
@@ -857,7 +861,6 @@ async def advanced_resume_search(
         db=db,
         current_user=current_user,
     )
-
 
 # ============ SUBMISSION QUERY ENDPOINTS ============
 
