@@ -16,12 +16,37 @@ RESUME_FOLDER = os.path.join(os.path.dirname(__file__), "..", "uploads")
 # 🔥 Efficient hash (no full file load)
 def generate_file_hash(file_path):
     hash_md5 = hashlib.md5()
-
     with open(file_path, "rb") as f:
         for chunk in iter(lambda: f.read(4096), b""):
             hash_md5.update(chunk)
-
     return hash_md5.hexdigest()
+
+
+async def process_files_async(file_jobs):
+    """Process all resumes in a single event loop (efficient)"""
+    db: Session = SessionLocal()
+
+    try:
+        for file_path, file_hash in file_jobs:
+            try:
+                await process_resume_file(
+                    file_path=file_path,
+                    db=db,
+                    job_id=None,   # ✅ clean design
+                    resume_hash=file_hash
+                )
+            except Exception as e:
+                print(f"❌ Failed async processing: {file_path} → {e}")
+
+        db.commit()
+
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Async batch error: {e}")
+
+    finally:
+        db.close()
+
 
 def index_new_resumes():
     db: Session = SessionLocal()
@@ -36,7 +61,7 @@ def index_new_resumes():
         files = os.listdir(RESUME_FOLDER)
         print(f"📂 Found {len(files)} files")
 
-        new_count = 0
+        file_jobs = []
 
         for file_name in files:
             file_path = os.path.join(RESUME_FOLDER, file_name)
@@ -55,25 +80,22 @@ def index_new_resumes():
                 if exists:
                     continue
 
-                print(f"📥 Processing: {file_name}")
-
-                # ✅ FIXED ASYNC CALL
-                asyncio.run(
-                    process_resume_file(
-                        file_path=file_path,
-                        db=db,
-                        resume_hash=file_hash
-                    )
-                )
-
-                new_count += 1
+                print(f"📥 Queued: {file_name}")
+                file_jobs.append((file_path, file_hash))
 
             except Exception as e:
-                print(f"❌ Failed file: {file_name} → {e}")
+                print(f"❌ Failed file check: {file_name} → {e}")
 
-        print(f"✅ New resumes processed: {new_count}")
+        db.close()
 
-        if new_count > 0:
+        # 🔥 Run all async processing in ONE event loop
+        if file_jobs:
+            asyncio.run(process_files_async(file_jobs))
+
+        print(f"✅ New resumes processed: {len(file_jobs)}")
+
+        # 🔥 Run embeddings once
+        if file_jobs:
             print("⚡ Generating embeddings...")
             asyncio.run(run_indexer())
         else:
@@ -82,8 +104,6 @@ def index_new_resumes():
     except Exception as e:
         print(f"❌ Indexing error: {e}")
 
-    finally:
-        db.close()
 
 def index_embeddings():
     print("⚡ Generating embeddings...")

@@ -82,15 +82,21 @@ class ResumeSearchResponse(BaseModel):
 
 # ============ HELPER FUNCTIONS ============
 
-async def process_resume_file(file_path: str, db: Session, resume_hash: str = None):
+async def process_resume_file(
+    file_path: str,
+    db: Session,
+    job_id: str,
+    resume_hash: str = None
+):
     """Extract text, generate embedding, and store in submissions table."""
     try:
         resume_text = extract_text(file_path) or ""
         resume_text = re.sub(r"[^\x00-\x7F]+", " ", resume_text)
 
         from api.utils.embedding_utils import generate_embedding
-
         embedding = await generate_embedding(resume_text)
+
+        submission_id = str(uuid.uuid4())
 
         db.execute(
             text(
@@ -102,6 +108,7 @@ async def process_resume_file(file_path: str, db: Session, resume_hash: str = No
                     resume_text,
                     embedding,
                     resume_hash,
+                    job_id,
                     created_at
                 )
                 VALUES (
@@ -111,28 +118,30 @@ async def process_resume_file(file_path: str, db: Session, resume_hash: str = No
                     :text,
                     :embedding,
                     :hash,
+                    :job_id,
                     :created_at
                 )
                 """
             ),
             {
-                "submission_id": str(uuid.uuid4()),
+                "submission_id": submission_id,
                 "name": os.path.basename(file_path),
                 "full_name": os.path.basename(file_path),
                 "text": resume_text,
                 "embedding": embedding,
                 "hash": resume_hash,
+                "job_id": job_id,   # 🔥 critical fix
                 "created_at": datetime.utcnow(),
             },
         )
+
         db.commit()
 
     except Exception as e:
         db.rollback()
         logger.error(f"Failed processing file {file_path}: {e}")
         raise
-
-
+    
 def parse_boolean_query(query: str) -> dict:
     """
     Parse a Boolean search query into components.
