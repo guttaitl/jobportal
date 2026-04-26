@@ -2,6 +2,14 @@
 Resume Routes - Search, Upload, and Management
 """
 
+from api.utils.resume_parser import (
+    extract_text,
+    extract_skills,
+    extract_location,
+    extract_job_title,
+    text_to_html
+)
+
 from fastapi import (
     APIRouter,
     File,
@@ -90,14 +98,31 @@ async def process_resume_file(
 ):
     """Extract text, generate embedding, and store in submissions table."""
     try:
+        # -----------------------------
+        # TEXT EXTRACTION (FIXED)
+        # -----------------------------
         resume_text = extract_text(file_path) or ""
         resume_text = re.sub(r"[^\x00-\x7F]+", " ", resume_text)
 
+        # -----------------------------
+        # STRUCTURED PARSING (NEW)
+        # -----------------------------
+        skills = extract_skills(resume_text)
+        city, state = extract_location(resume_text)
+        job_title = extract_job_title(resume_text)
+        formatted_html = text_to_html(resume_text)
+
+        # -----------------------------
+        # EMBEDDING
+        # -----------------------------
         from api.utils.embedding_utils import generate_embedding
         embedding = await generate_embedding(resume_text)
 
         submission_id = str(uuid.uuid4())
 
+        # -----------------------------
+        # INSERT (FIXED + EXTENDED)
+        # -----------------------------
         db.execute(
             text(
                 """
@@ -109,6 +134,11 @@ async def process_resume_file(
                     embedding,
                     resume_hash,
                     job_id,
+                    skills,
+                    city,
+                    state,
+                    job_title,
+                    formatted_html,
                     created_at
                 )
                 VALUES (
@@ -119,6 +149,11 @@ async def process_resume_file(
                     :embedding,
                     :hash,
                     :job_id,
+                    :skills,
+                    :city,
+                    :state,
+                    :job_title,
+                    :formatted_html,
                     :created_at
                 )
                 """
@@ -130,7 +165,15 @@ async def process_resume_file(
                 "text": resume_text,
                 "embedding": embedding,
                 "hash": resume_hash,
-                "job_id": job_id,   # 🔥 critical fix
+                "job_id": job_id,
+
+                # 🔥 NEW FIELDS
+                "skills": skills,
+                "city": city,
+                "state": state,
+                "job_title": job_title,
+                "formatted_html": formatted_html,
+
                 "created_at": datetime.utcnow(),
             },
         )
