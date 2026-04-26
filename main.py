@@ -1,7 +1,6 @@
 # ==========================================================
-# HIRING CIRCLE API - CLEAN VERSION
+# HIRING CIRCLE USA
 # ==========================================================
-
 import os
 import logging
 import threading
@@ -13,7 +12,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import Response
 from starlette.middleware.base import BaseHTTPMiddleware
-
 from api.db import engine
 from api.models import Base
 
