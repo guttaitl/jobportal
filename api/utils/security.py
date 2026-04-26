@@ -26,7 +26,6 @@ REFRESH_TOKEN_EXPIRE_DAYS = 7
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 security = HTTPBearer(auto_error=False)
-security = HTTPBearer()
 
 # ==========================================================
 # PASSWORD FUNCTIONS
