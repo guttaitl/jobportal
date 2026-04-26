@@ -77,8 +77,8 @@ def index_new_resumes():
                     {"hash": file_hash}
                 ).fetchone()
 
-                if exists:
-                    continue
+             #   if exists:
+             #       continue
 
                 print(f"📥 Queued: {file_name}")
                 file_jobs.append((file_path, file_hash))
