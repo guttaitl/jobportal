@@ -87,6 +87,16 @@ async def vector_search_resumes(
         SELECT 
             s.submission_id,
             s.candidate_name,
+            s.full_name,
+            s.job_id,
+            s.job_title,
+            s.skills,
+            s.city,
+            s.state,
+            s.formatted_html,
+            s.resume_text,
+            s.match_score,
+            s.scoring_status,
             1 - (s.embedding <=> :query_embedding) AS similarity
         FROM submissions s
         WHERE s.embedding IS NOT NULL
@@ -180,19 +190,28 @@ async def match_job_to_candidates_vector(
 
         # 3. Vector search for matching candidates
         result = db.execute(text("""
-        SELECT 
-            s.submission_id,
-            s.candidate_name,
-            1 - (s.embedding <=> :job_embedding) AS similarity
-        FROM submissions s
-        WHERE s.embedding IS NOT NULL
-        ORDER BY s.embedding <=> :job_embedding
-        LIMIT :top_k;
+            SELECT 
+                s.submission_id,
+                s.candidate_name,
+                s.full_name,
+                s.job_id,
+                s.job_title,
+                s.skills,
+                s.city,
+                s.state,
+                s.formatted_html,
+                s.resume_text,
+                s.match_score,
+                s.scoring_status,
+                1 - (s.embedding <=> :job_embedding) AS similarity
+            FROM submissions s
+            WHERE s.embedding IS NOT NULL
+            ORDER BY s.embedding <=> :job_embedding
+            LIMIT :top_k;
         """), {
             "job_embedding": job_embedding_str,
-            "min_similarity": request.min_similarity,
             "top_k": request.top_k
-        })   
+        })
 
         rows = result.fetchall()
         
@@ -237,36 +256,37 @@ async def hybrid_search_resumes(
     start_time = time.time()
 
     try:
-        # 1. Generate query embedding
+        # 1. Generate embedding
         query_embedding = await generate_embedding(request.query)
 
         if not query_embedding:
             raise HTTPException(status_code=500, detail="Failed to generate query embedding")
 
-        # 🔥 Improve text matching (multi-keyword pattern)
+        # 2. Prepare keyword pattern
         keywords = request.query.split()
         query_pattern = "%{}%".format("%".join(keywords))
 
-        # 🔥 HNSW tuning (safe)
-        db.execute(text("SET LOCAL hnsw.ef_search = 100;"))
-
-        # 2. Hybrid search
+        # 3. Hybrid Query (CLEAN + WORKING)
         result = db.execute(text("""
         WITH vector_scores AS (
             SELECT 
                 s.submission_id,
+                s.candidate_name,
                 s.full_name,
                 s.job_id,
                 s.job_title,
+                s.skills,
+                s.city,
+                s.state,
+                s.formatted_html,
                 s.resume_text,
                 s.match_score,
                 s.scoring_status,
-                s.skill_matrix,
-                1 - (s.embedding <=> CAST(:query_embedding AS vector)) AS vector_similarity
+                1 - (s.embedding <=> :query_embedding) AS vector_similarity
             FROM submissions s
             WHERE s.embedding IS NOT NULL
-            ORDER BY s.embedding <=> CAST(:query_embedding AS vector)
-            LIMIT :top_k * 5
+            ORDER BY s.embedding <=> :query_embedding
+            LIMIT :top_k
         ),
 
         text_scores AS (
@@ -274,41 +294,48 @@ async def hybrid_search_resumes(
                 s.submission_id,
                 (
                     CASE 
-                    WHEN to_tsvector('english', s.resume_text) @@ plainto_tsquery(:query)
-                    THEN 1.0 ELSE 0 
+                        WHEN to_tsvector('english', s.resume_text) @@ plainto_tsquery(:query)
+                        THEN 1.0 ELSE 0 
                     END
-                    CASE WHEN s.skill_matrix ILIKE :query_pattern THEN 1.2 ELSE 0 END +
+                    +
+                    CASE WHEN s.skills ILIKE :query_pattern THEN 1.2 ELSE 0 END
+                    +
                     CASE WHEN s.full_name ILIKE :query_pattern THEN 0.5 ELSE 0 END
-                ) AS text_match
-            FROM vector_scores vs
-            JOIN submissions s 
-                ON s.submission_id = vs.submission_id
+                ) AS text_score
+            FROM submissions s
         )
 
         SELECT 
-            vs.submission_id,
-            vs.full_name,
-            vs.job_id,
-            vs.job_title,
-            vs.resume_text,
-            vs.match_score,
-            vs.scoring_status,
-            vs.skill_matrix,
-            vs.vector_similarity,
-            COALESCE(ts.text_match, 0) AS text_match,
+            v.submission_id,
+            v.candidate_name,
+            v.full_name,
+            v.job_id,
+            v.job_title,
+            v.skills,
+            v.city,
+            v.state,
+            v.formatted_html,
+            v.resume_text,
+            v.match_score,
+            v.scoring_status,
+
+            v.vector_similarity,
+            COALESCE(t.text_score, 0) AS text_score,
+
             (
-                vs.vector_similarity * :vector_weight +
-                COALESCE(ts.text_match, 0) * :text_weight
+                (:vector_weight * v.vector_similarity) +
+                (:text_weight * COALESCE(t.text_score, 0))
             ) AS combined_score
 
-        FROM vector_scores vs
-        LEFT JOIN text_scores ts 
-            ON vs.submission_id = ts.submission_id
+        FROM vector_scores v
+        LEFT JOIN text_scores t 
+            ON v.submission_id = t.submission_id
 
         ORDER BY combined_score DESC
-        LIMIT :top_k
+        LIMIT :top_k;
         """), {
             "query_embedding": query_embedding,
+            "query": request.query,
             "query_pattern": query_pattern,
             "vector_weight": request.vector_weight,
             "text_weight": request.text_weight,
@@ -317,20 +344,29 @@ async def hybrid_search_resumes(
 
         rows = result.fetchall()
 
-        # 3. Format results
+        # 4. Format response
         results = []
         for row in rows:
             results.append({
                 "submission_id": row.submission_id,
                 "full_name": row.full_name,
+
+                # ✅ structured fields (fixes your UI)
+                "skills": row.skills,
+                "city": row.city,
+                "state": row.state,
+                "formatted_html": row.formatted_html,
+
                 "job_id": row.job_id,
                 "job_title": row.job_title,
                 "match_score": row.match_score,
                 "scoring_status": row.scoring_status,
-                "similarity": round(row.vector_similarity, 4),
-                "text_match": round(row.text_match, 4),
+
+                "vector_similarity": round(row.vector_similarity, 4),
+                "text_score": round(row.text_score, 4),
                 "combined_score": round(row.combined_score, 4),
                 "combined_percent": round(row.combined_score * 100, 1),
+
                 "resume_preview": (
                     row.resume_text[:500] + "..."
                     if row.resume_text and len(row.resume_text) > 500
@@ -355,7 +391,7 @@ async def hybrid_search_resumes(
     except Exception as e:
         logging.error(f"Hybrid search failed: {e}")
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
-
+    
 # =========================================================
 # BACKGROUND TASKS
 # =========================================================

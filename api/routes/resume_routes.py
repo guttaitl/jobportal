@@ -853,6 +853,13 @@ async def search_resumes(
                 "submission_id": r.submission_id,
                 "candidate_name": r.candidate_name,
                 "full_name": r.full_name,
+
+                # 🔥 NEW FIELDS (CRITICAL)
+                "skills": r.skills,
+                "city": r.city,
+                "state": r.state,
+                "formatted_html": r.formatted_html,
+
                 "job_id": r.job_id,
                 "job_title": r.job_title,
                 "match_score": r.match_score,
@@ -861,6 +868,7 @@ async def search_resumes(
                 "confidence_band": r.confidence_band,
                 "overall_fit": r.final_recommendation,
                 "report_path": r.report_path,
+
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "processed_at": r.processed_at.isoformat() if r.processed_at else None,
             }
