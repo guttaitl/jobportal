@@ -53,14 +53,17 @@ class ForceHTTPSMiddleware(BaseHTTPMiddleware):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",
-        "https://hiringcircleusa.vercel.app",
-        "https://hiringcircle.us",
         "https://www.hiringcircle.us",
+        "https://hiringcircle.us",
+        "https://hiringcircleusa.vercel.app",
+        "http://localhost:3000",
     ],
+    allow_origin_regex=r"https:\/\/.*\.hiringcircle\.us",  # covers subdomains
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 # ==========================================================
