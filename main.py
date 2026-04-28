@@ -8,9 +8,10 @@ import warnings
 from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI
+
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from api.db import engine
 from api.models import Base
