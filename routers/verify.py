@@ -65,7 +65,7 @@ def verify_email(token: str):
         return {
             "verified": True,
             "message": "Email verified successfully!",
-            "redirect_url": "/login"
+            "redirect_url": "/"
         }
 
     except HTTPException:
