@@ -1,5 +1,4 @@
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import RedirectResponse
 import psycopg2
 import os
 import logging
@@ -27,14 +26,14 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 def verify_email(token: str):
     """
     Verify a user's email via verification token.
-    Redirects to the frontend with ?verified=true|false.
+    Returns JSON for frontend fetch() API call.
     """
     if not DATABASE_URL:
         logger.error("DATABASE_URL not configured")
         raise HTTPException(status_code=500, detail="Database not configured")
 
     if not token:
-        return RedirectResponse(url=f"{FRONTEND_URL}/?verified=false")
+        raise HTTPException(status_code=400, detail="Token is required")
 
     conn = None
     cur = None
@@ -60,18 +59,25 @@ def verify_email(token: str):
 
         if not user:
             logger.warning(f"Invalid or expired verification token attempted: {token[:8]}...")
-            return RedirectResponse(url=f"{FRONTEND_URL}/?verified=false")
+            raise HTTPException(status_code=400, detail="Invalid or expired verification link")
 
         logger.info(f"Email verified for user id: {user[0]}")
-        return RedirectResponse(url=f"{FRONTEND_URL}/?verified=true")
+        return {
+            "verified": True,
+            "message": "Email verified successfully!",
+            "redirect_url": "/login"
+        }
+
+    except HTTPException:
+        raise
 
     except psycopg2.Error as e:
         logger.error(f"Database error during email verification: {e}")
-        return RedirectResponse(url=f"{FRONTEND_URL}/?verified=false")
+        raise HTTPException(status_code=500, detail="Database error")
 
     except Exception as e:
         logger.error(f"Unexpected error during email verification: {e}")
-        return RedirectResponse(url=f"{FRONTEND_URL}/?verified=false")
+        raise HTTPException(status_code=500, detail="Verification failed")
 
     finally:
         if cur:
