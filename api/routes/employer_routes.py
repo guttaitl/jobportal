@@ -163,12 +163,13 @@ async def post_job(
         db.execute(
             text("""
                 INSERT INTO job_postings (
-                    jobid, created_date, job_title, client_name, location,
+                    jobid, job_title, client_name, location,
                     work_authorization, experience, salary, employment_type,
                     visa_transfer, job_description, skills, responsibilities,
                     posted_by, created_at
-                ) VALUES (
-                    :jobid, :created_date, :job_title, :client_name, :location,
+                )
+                VALUES (
+                    :jobid, :job_title, :client_name, :location,
                     :work_authorization, :experience, :salary, :employment_type,
                     :visa_transfer, :job_description, :skills, :responsibilities,
                     :posted_by, NOW()
@@ -554,15 +555,16 @@ async def repost_job(
         db.execute(
             text("""
                 INSERT INTO job_postings (
-                    jobid, created_date, job_title, client_name, location,
+                    jobid, job_title, client_name, location,
                     work_authorization, experience, salary, employment_type,
                     visa_transfer, job_description, skills, responsibilities,
-                    posted_by, created_at, updated_at
-                ) VALUES (
-                    :jobid, :created_date, :job_title, :client_name, :location,
+                    posted_by, created_at
+                )
+                VALUES (
+                    :jobid, :job_title, :client_name, :location,
                     :work_authorization, :experience, :salary, :employment_type,
                     :visa_transfer, :job_description, :skills, :responsibilities,
-                    :posted_by, NOW(), NOW()
+                    :posted_by, NOW()
                 )
             """),
             {
