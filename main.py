@@ -167,6 +167,8 @@ from sentence_transformers import SentenceTransformer
 
 _model = None
 
+
+
 def load_model():
     global _model
     if _model is None:
@@ -174,6 +176,8 @@ def load_model():
         _model = SentenceTransformer("all-MiniLM-L6-v2")
         log("AI model loaded")
     return _model
+
+
 
 @app.on_event("startup")
 async def startup():
